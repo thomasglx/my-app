@@ -33,6 +33,7 @@ const Offers = (() => {
     if (injected) { state.exp = injected.exp; state.overrides = injected.overrides || {}; return; }
     const [exp, ov] = await Promise.all([GH.readJson(EXPORT), GH.readJson(OVERRIDES)]);
     if (!exp) throw new Error("export/offers.json not found in MyOffers yet.");
+    if ((exp.schema_version || 1) < 3) console.warn("MyOffers export is an older version: priorities are estimated, no actions.");
     state.exp = exp; state.overrides = ov || {};
   }
 
@@ -44,6 +45,10 @@ const Offers = (() => {
     if (ov.status && ov.set_at && ov.set_at > (state.exp.generated_at || "") && ov.status !== o.status) {
       Object.assign(v, { status: ov.status, status_source: "manual", status_at: ov.set_at.slice(0, 10),
                          status_evidence: "Set manually in the app", pending: true });
+    }
+    if (!v.level) { // older data without priorities: estimate from the role family
+      v.level = { 1: 2, 2: 3, 3: 5, 4: 7, 5: 6, 6: 8 }[v.family] || 6;
+      v.band = { 1: "A", 2: "A", 3: "B", 4: "B", 5: "C", 6: "C", 7: "D", 8: "E" }[v.level];
     }
     v.review = (v.status_evidence || "").startsWith("REVIEW:");
     return v;
