@@ -250,3 +250,19 @@ dialog input { font: inherit; padding: 8px 11px; border-radius: 10px; border: 1p
 .action .company { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .action .deadline { margin-top: auto; padding-top: 10px; }
 .action-btns .btn { min-width: 116px; justify-content: center; }
+
+/* Filter row: identical heights and look in Safari (native controls reset) */
+.filters { align-items: center; }
+.filters input[type=search], .filters select {
+  -webkit-appearance: none; appearance: none; height: 38px; line-height: 20px; padding: 8px 12px; margin: 0;
+  border-radius: 10px; font-size: 14px; box-sizing: border-box; vertical-align: middle; }
+.filters input[type=search]::-webkit-search-decoration { -webkit-appearance: none; }
+.filters select { padding-right: 32px; min-width: 190px; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 52%, calc(100% - 12px) 52%; background-size: 5px 5px; background-repeat: no-repeat; }
+.toggle { height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-sizing: border-box; }
+.toggle input { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin: 0; border: 1.5px solid var(--greige);
+  border-radius: 4px; display: inline-grid; place-content: center; cursor: pointer; }
+.toggle input:checked { background: var(--gold); border-color: var(--gold); }
+.toggle input:checked::after { content: "✓"; color: #fff; font-size: 11px; font-weight: 700; line-height: 1; }
+.toggle:has(input:checked) { border-color: var(--gold); color: var(--fg); }
