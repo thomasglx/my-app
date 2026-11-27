@@ -13,7 +13,17 @@ const GH = (() => {
     try { t ? localStorage.setItem(KEY, t) : localStorage.removeItem(KEY); } catch { /* memory only */ }
   }
 
+  // Retries network errors ("Load failed" in Safari, e.g. right after the Mac wakes up)
   async function call(path, opts = {}) {
+    for (let i = 0; ; i++) {
+      try { return await callOnce(path, opts); }
+      catch (e) {
+        if (e instanceof GhError || i >= 3) throw e;
+        await new Promise(r => setTimeout(r, 700 * (i + 1)));
+      }
+    }
+  }
+  async function callOnce(path, opts = {}) {
     const res = await fetch(API + path, {
       ...opts,
       cache: "no-store",

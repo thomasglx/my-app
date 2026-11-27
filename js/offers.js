@@ -310,10 +310,10 @@ const Offers = (() => {
   let bound = false;
   async function show() {
     if (!bound) { bind(); bound = true; }
-    $("list").innerHTML = `<div class="empty">Loading…</div>`;
+    if (!state.exp) $("list").innerHTML = `<div class="empty">Loading…</div>`;
     await load();
     render();
   }
 
-  return { show, render };
+  return { show, render, hasData: () => !!state.exp };
 })();
