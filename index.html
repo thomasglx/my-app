@@ -23,6 +23,19 @@
         <a class="nav-item active" data-section="offers" href="#offers">
           <span class="nav-ico">◇</span><span>MyOffers</span><span class="nav-badge gold" id="nav-actions" title="Actions needed"></span><span class="nav-badge" id="nav-count" title="Offers to apply to"></span>
         </a>
+        <a class="nav-item nav-folder" data-section="networking" href="#networking/today">
+          <span class="nav-ico">◎</span><span>Networking</span><span class="nav-caret">▾</span>
+        </a>
+        <div class="nav-sub" id="nav-sub">
+          <a href="#networking/today" data-page="today">Today</a>
+          <a href="#networking/firms" data-page="firms">Firms</a>
+          <a href="#networking/requests" data-page="requests">Requests<span class="nav-badge" id="nb-requests"></span></a>
+          <a href="#networking/messages" data-page="messages">Messages<span class="nav-badge" id="nb-messages"></span></a>
+          <a href="#networking/replies" data-page="replies">Replies<span class="nav-badge gold" id="nb-replies"></span></a>
+          <a href="#networking/calls" data-page="calls">Calls<span class="nav-badge" id="nb-calls"></span></a>
+          <a href="#networking/followup" data-page="followup">Follow-up<span class="nav-badge gold" id="nb-followup"></span></a>
+          <a href="#networking/network" data-page="network">Network</a>
+        </div>
         <div class="nav-soon">More sections soon</div>
       </nav>
       <div class="sidebar-foot">
@@ -43,6 +56,15 @@
           </form>
           <p class="error" id="setup-error"></p>
         </div>
+      </section>
+
+      <!-- Networking -->
+      <section id="networking" hidden>
+        <header class="page-head">
+          <div><h1 id="net-title">Today</h1><div class="freshness" id="net-fresh"></div></div>
+          <div class="head-right"><input id="net-search" type="search" placeholder="Search…"><button class="btn ghost" id="btn-net-refresh">↻ Refresh</button></div>
+        </header>
+        <div id="net-body"></div>
       </section>
 
       <!-- MyOffers -->
@@ -72,6 +94,7 @@
     </main>
   </div>
 
+  <div id="person-wrap" class="person-wrap" hidden><aside id="person" class="person"></aside></div>
   <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
   <div id="toast" class="toast" hidden></div>
 
@@ -89,6 +112,7 @@
 
   <script src="js/github.js"></script>
   <script src="js/offers.js"></script>
+  <script src="js/networking.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
