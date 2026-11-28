@@ -31,10 +31,10 @@ const Networking = (() => {
   async function load() {
     const inj = window.__MYAPP_PREVIEW_NET__;
     if (inj) { Object.assign(st, { base: inj.base, ov: inj.ov || {}, prompts: inj.prompts, profiles: {}, offers: inj.offers, inbox: inj.inbox || null, ai: inj.ai || {} }); return model(); }
-    const [base, ov, prompts, offers, inbox, aid] = await Promise.all([GH.readJson(DATA), GH.readJson(OVR), GH.readJson(PROMPTS), GH.readJson(OFFERS), GH.readJson(INBOX).catch(() => null), GH.readJson(DRAFTS).catch(() => null)]);
+    const [base, ov, prompts, offers, inbox, aid, prof] = await Promise.all([GH.readJson(DATA), GH.readJson(OVR), GH.readJson(PROMPTS), GH.readJson(OFFERS), GH.readJson(INBOX).catch(() => null), GH.readJson(DRAFTS).catch(() => null), GH.readJson(PROFILES).catch(() => null)]);
     if (!base) throw new Error("export/networking.json not found yet.");
     if ((base.schema_version || 1) < 2) throw new Error("The networking data is in the old format. It needs a re-import (schema 2).");
-    Object.assign(st, { base, ov: ov || {}, prompts: prompts || { prompts: [] }, offers, inbox, ai: (aid || {}).drafts || {} });
+    Object.assign(st, { base, ov: ov || {}, prompts: prompts || { prompts: [] }, offers, inbox, ai: (aid || {}).drafts || {}, profiles: prof || {} });
     model();
   }
   function model() { st.m = NetEngine.build(st.base, st.ov, st.offers, todayIso(), st.inbox); return st.m; }
