@@ -207,7 +207,9 @@ const Networking = (() => {
       card("Someone else", null, `<button class="btn mini ${st.open === "firm:" ? "" : "primary"}" data-open="firm:">${st.open === "firm:" ? "Close" : "Add a request"}</button>${st.open === "firm:" ? addForm(null) : ""}`) +
       `</div><div class="net-col">` +
       card("Referred in calls", t.referred.length, t.referred.map(p => prow(p, `Referred by ${esc(p.introduced_by)}`, `<a class="btn mini ghost" href="${esc(profileUrl(p))}" target="_blank" rel="noopener">Profile ↗</a><button class="btn mini primary" data-act="req-sent" data-pid="${esc(p.id)}">Request sent ✓</button>`)).join("") || empty("None.")) +
-      card("Withdraw (3+ weeks)", t.withdraw.length, t.withdraw.map(p => prow(p, esc(p.st.info), `<button class="btn mini" data-act="withdrawn" data-pid="${esc(p.id)}">Withdrawn ✓</button>`)).join("") || empty("None.")) +
+      card("Sync with LinkedIn", null, `<form id="sent-sync" class="addp"><div class="addp-hint">LinkedIn → My Network → Manage → <b>Sent</b>: select the whole page (Cmd+A), copy, paste here. Anyone missing from that page is marked withdrawn; anyone new is added.</div>
+        <textarea name="text" rows="3" placeholder="Paste the Sent invitations page"></textarea><div class="comp-btns"><span class="muted small">${st.ov.sent_sync_at ? "Last sync " + fmtT(st.ov.sent_sync_at) : "Never synced"}</span><span class="grow"></span><button class="btn mini primary">Sync</button></div></form>`) +
+      card("Withdraw (3+ weeks)", st.m.P.filter(p => p.st.stage === "withdraw").length, st.m.P.filter(p => p.st.stage === "withdraw").map(p => prow(p, esc(p.st.info), `<button class="btn mini" data-act="withdrawn" data-pid="${esc(p.id)}">Withdrawn ✓</button>`)).join("") || empty("None.")) +
       card("Waiting for acceptance", pend.length, pend.map(p => prow(p, esc(p.st.info), `<button class="btn mini ghost" data-act="accepted" data-pid="${esc(p.id)}">Accepted ✓</button>`)).join("") || empty("None.")) +
       `</div></div>`;
   };
@@ -338,7 +340,7 @@ const Networking = (() => {
     const T = todayIso();
     const field = (k, label, ph = "") => `<label class="pf-edit"><span>${label}</span><input data-field="${k}" value="${esc(p[k] || "")}" placeholder="${esc(ph)}"></label>`;
     const LBL = { request_sent: "Request sent", accepted: "Accepted", message_sent: "Message sent", message_received: "Message received", call_booked: "Call booked", call_done: "Call done",
-                  contact_logged: "Contact", closed: "Closed", reopened: "Reopened", withdrawn: "Request withdrawn", copied: "Copied", not_sent: "Not sent", note: "Note", handled: "No reply needed", skipped: "No need" };
+                  contact_logged: "Contact", closed: "Closed", reopened: "Reopened", withdrawn: "Request withdrawn / not pending", copied: "Copied", not_sent: "Not sent", note: "Note", handled: "No reply needed", skipped: "No need" };
     const tl = p.evs.slice().reverse().map(e => `<div class="tl ${e.type}"><div class="tl-d">${e.approx ? "~" : ""}${fmt(e.at)}</div><div class="tl-b"><b>${LBL[e.type] || e.type}</b>${e.kind ? ` · ${esc(e.kind.replace("_", " "))}` : ""}${e.channel ? ` · ${esc(CH[e.channel] || e.channel)}` : ""}${e.call_at ? ` · ${fmtT(e.call_at)}` : ""}${e.reason ? ` · ${esc(e.reason)}` : ""}
       ${e.text ? `<div class="tl-t">${esc(e.text)}</div>` : ""}</div>${e.source === "app" ? `<button class="tl-x" title="Undo" data-undo="${esc(e.id)}">×</button>` : ""}</div>`).join("");
     $("person").innerHTML = `<button class="pclose" data-close>×</button>
@@ -492,6 +494,15 @@ const Networking = (() => {
     if (f.id === "advice-form") {
       const x = Object.fromEntries(new FormData(f).entries()), a = { id: uid(), text: x.text, from: x.from, theme: x.theme, at: nowIso(), to_todo: false };
       st.ov.advice = [...(st.ov.advice || []), a]; render(); return save(OVR, d => ({ ...d, advice: [...(d.advice || []), a] }), "advice");
+    }
+    if (f.id === "sent-sync") {
+      const r = NetEngine.syncSent(st.m, new FormData(f).get("text"), todayIso(), nowIso(), uid);
+      if (!r) return toast("Couldn't read the page. Copy the whole Sent page and paste it again.");
+      const w = r.events.filter(e => e.type === "withdrawn").length, a = r.events.filter(e => e.type === "request_sent").length;
+      const pn = Object.fromEntries(r.people.map(p => [p.id, p])), at = nowIso();
+      st.ov.people_new = { ...(st.ov.people_new || {}), ...pn }; st.ov.events = [...(st.ov.events || []), ...r.events]; st.ov.sent_sync_at = at; model(); render();
+      toast(`${r.list.length} pending on LinkedIn · ${w} marked withdrawn · ${a} added`, true);
+      return save(OVR, d => ({ ...d, people_new: { ...(d.people_new || {}), ...pn }, events: [...(d.events || []), ...r.events], sent_sync_at: at }), "sync sent invitations");
     }
     if (f.id === "settings-form") {
       const x = Object.fromEntries([...new FormData(f).entries()].map(([k, v]) => [k, +v]));

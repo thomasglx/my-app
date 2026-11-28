@@ -216,6 +216,44 @@ const NetEngine = (() => {
              counters: { sentToday, reqToday, req7d, reqLeft, msgLeft, netDoneToday } };
   }
 
+  /* -------------------------------------------------------------- LinkedIn "Sent invitations" page, pasted
+     The archive lists every request ever sent (withdrawn ones too), so the only truth for "still pending"
+     is LinkedIn's My Network → Manage → Sent page. */
+  const cleanName = n => String(n || "").replace(/\(.*?\)/g, " ").split(",")[0].trim();
+  function parseSent(text) {
+    const L = String(text || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean), out = [];
+    L.forEach((l, i) => {
+      const m = l.match(/^Sent (\d+|an?|one) (hour|day|week|month)s? ago$/i) || (/^Sent (today|yesterday)$/i.test(l) ? [l, l.split(" ")[1], "day"] : null);
+      if (!m || i < 2) return;
+      const n = /^(an?|one|today)$/i.test(m[1]) ? (/today/i.test(m[1]) ? 0 : 1) : /yesterday/i.test(m[1]) ? 1 : +m[1];
+      const days = { hour: 0, day: 1, week: 7, month: 30 }[m[2].toLowerCase()] * n;
+      const name = L[i - 2] === "Withdraw" ? L[i - 1] : L[i - 2], headline = L[i - 2] === "Withdraw" ? "" : L[i - 1];
+      out.push({ name: cleanName(name), headline, days });
+    });
+    return out;
+  }
+  function syncSent(model, text, today, nowIso, uid) {
+    const list = parseSent(text);
+    if (!list.length) return null;
+    const keyOf = n => nameKey(cleanName(n));
+    const inList = new Map(list.map(x => [keyOf(x.name), x]));
+    const events = [], people = [];
+    model.P.forEach(p => {
+      if (!["pending", "withdraw"].includes(p.st.stage)) return;
+      if (!inList.has(keyOf(p.name))) events.push({ id: uid(), person: p.id, type: "withdrawn", at: nowIso, source: "sync", reason: "not in LinkedIn's sent list" });
+    });
+    const known = new Map(model.P.map(p => [keyOf(p.name), p]));
+    list.forEach(x => {
+      const p = known.get(keyOf(x.name)), at = addDays(today, -x.days);
+      if (p && ["pending", "withdraw"].includes(p.st.stage)) return;
+      if (p && p.st.s.req && !p.st.s.withdrawn) return;
+      const id = p ? p.id : "p-" + keyOf(x.name).replace(/\s+/g, "-");
+      if (!p) people.push({ id, name: x.name, title: x.headline, firm: "", lang: "FR", seniority: "", origin: "app", notes: [] });
+      events.push({ id: uid(), person: id, type: "request_sent", at, approx: true, source: "sync", channel: "linkedin" });
+    });
+    return { list, events, people };
+  }
+
   /* -------------------------------------------------------------- weekly funnel */
   function funnel(model, today, weeks = 6) {
     const monday = s => { const x = D(s); const k = (x.getDay() + 6) % 7; x.setDate(x.getDate() - k); return isoDay(x); };
@@ -284,5 +322,5 @@ const NetEngine = (() => {
   }
 
   return { build, funnel, templates, fill, form, unresolved, ics, vcard, levelOf, firmMatch, norm, nameKey,
-           addDays, diff, day, isoDay, DEFAULTS, PERSONAL };
+           addDays, diff, day, isoDay, DEFAULTS, PERSONAL, parseSent, syncSent };
 })();
