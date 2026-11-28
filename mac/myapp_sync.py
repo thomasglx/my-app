@@ -326,7 +326,7 @@ def main():
 
     now = datetime.now(timezone.utc)
     last_up = state.get("last_upload")
-    need_upload = bool(new) or not last_up or (now - datetime.fromisoformat(last_up)).total_seconds() > HEARTBEAT_MIN * 60 \
+    need_upload = bool(new) or not last_up or (now - datetime.fromisoformat(last_up.replace("Z", "+00:00"))).total_seconds() > HEARTBEAT_MIN * 60 \
         or state.get("sources") != sources
     log(f"{len(events)} events ({len(new)} new), {len(unmatched)} unmatched, sources {sources}")
     if DRY:

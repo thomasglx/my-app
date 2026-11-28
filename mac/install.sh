@@ -24,6 +24,8 @@ if ! /usr/bin/python3 -c "import sqlite3, imaplib" 2>/dev/null; then
   exit 1
 fi
 REAL_PY=$(/usr/bin/python3 -c "import sys; print(sys.executable)")
+# The binary that really runs (and needs Full Disk Access) is Python.app inside the framework
+PY_BIN=$(ls -d /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/Current/Resources/Python.app/Contents/MacOS/Python 2>/dev/null || echo /usr/bin/python3)
 echo "   ✓ $REAL_PY"
 
 echo "2/5  Downloading the program…"
@@ -61,7 +63,7 @@ cat > "$PLIST" <<EOF
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$LABEL</string>
-  <key>ProgramArguments</key><array><string>/usr/bin/python3</string><string>$DIR/myapp_sync.py</string></array>
+  <key>ProgramArguments</key><array><string>$PY_BIN</string><string>$DIR/myapp_sync.py</string></array>
   <key>StartInterval</key><integer>120</integer>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>$DIR/sync.log</string>
