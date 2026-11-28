@@ -40,9 +40,14 @@ def secret(service):
     v = os.environ.get("MYAPP_SECRET_" + service.upper().replace("-", "_"))
     if v: return v
     try:
-        return subprocess.run(["security", "find-generic-password", "-s", service, "-w"], capture_output=True, text=True, check=True).stdout.strip()
+        v = subprocess.run(["security", "find-generic-password", "-s", service, "-w"], capture_output=True, text=True, check=True).stdout.strip()
     except Exception:
         return ""
+    # the Keychain prints values containing invisible characters (e.g. from a paste) as hex: decode, then clean
+    if re.fullmatch(r"(?:[0-9a-f]{2})+", v) and len(v) > 20:
+        try: v = bytes.fromhex(v).decode("utf-8", "ignore")
+        except ValueError: pass
+    return re.sub(r"[\x00-\x20\x7f]", "", v)
 
 
 def iso(dt): return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

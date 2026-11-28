@@ -36,13 +36,13 @@ save() { security add-generic-password -U -a myapp -s "$1" -T /usr/bin/security 
 if security find-generic-password -s myapp-github -w >/dev/null 2>&1; then
   read -r -p "   A GitHub key is already saved. Replace it? (y/N) " R; [ "$R" = "y" ] && NEED_GH=1
 else NEED_GH=1; fi
-if [ -n "$NEED_GH" ]; then read -r -s -p "   Paste the GitHub key for the Mac (github_pat_…): " T; echo; save myapp-github "$T"; fi
+if [ -n "$NEED_GH" ]; then read -r -s -p "   Paste the GitHub key for the Mac (github_pat_…): " T; echo; T=$(printf %s "$T" | tr -cd 'A-Za-z0-9_'); save myapp-github "$T"; echo "   key starts with: ${T:0:11}"; fi
 if security find-generic-password -s myapp-gmail -w >/dev/null 2>&1; then
   read -r -p "   A Gmail app password is already saved. Replace it? (y/N) " R; [ "$R" = "y" ] && NEED_GM=1
 else NEED_GM=1; fi
 if [ -n "$NEED_GM" ]; then
-  read -r -p "   Your Gmail address: " U; save myapp-gmail-user "$U"
-  read -r -s -p "   Paste the Gmail app password (16 letters, spaces don't matter): " P; echo; save myapp-gmail "$(echo "$P" | tr -d ' ')"
+  read -r -p "   Your Gmail address: " U; save myapp-gmail-user "$(printf %s "$U" | tr -d '[:space:][:cntrl:]')"
+  read -r -s -p "   Paste the Gmail app password (16 letters, spaces don't matter): " P; echo; save myapp-gmail "$(printf %s "$P" | tr -cd 'A-Za-z')"
 fi
 echo "   ✓ saved"
 
