@@ -105,7 +105,7 @@ const Networking = (() => {
   const empty = t => `<div class="empty-s">${t}</div>`;
   const when = due => { const T = todayIso(); return !due ? "" : due < T ? `<span class="late">${NetEngine.diff(due, T)} d late</span>` : due === T ? `<span class="due">today</span>` : `<span class="soon">${fmt(due)}</span>`; };
   const pname = p => `<a class="pname" data-person="${esc(p.id)}">${esc(p.name)}</a>`;
-  const prow = (p, sub, side = "", key = "") => `<div class="row ${st.open === key ? "is-open" : ""}"><div class="row-main"><div class="row-title">${pname(p)} <span class="muted">· ${esc(p.firm || p.title)}</span></div>${sub ? `<div class="row-sub">${sub}</div>` : ""}</div><div class="row-side">${side}</div></div>`;
+  const prow = (p, sub, side = "", key = "") => `<div class="row ${st.open === key ? "is-open" : ""}"><div class="row-main click" data-person="${esc(p.id)}"><div class="row-title">${pname(p)} <span class="muted">· ${esc(p.firm || p.title)}</span></div>${sub ? `<div class="row-sub">${sub}</div>` : ""}</div><div class="row-side">${side}</div></div>`;
   const writeBtn = (p, kind, label = "Write") => { const k = p.id + ":" + kind; return `<button class="btn mini ${st.open === k ? "" : "primary"}" data-open="${esc(k)}">${st.open === k ? "Close" : label}</button>`; };
   const REASONS = [["friend", "Friend"], ["classmate", "Classmate"], ["family", "Family"], ["elsewhere", "Handled elsewhere (call, WhatsApp…)"],
                    ["finished", "Conversation finished"], ["not relevant", "Not relevant for my search"]];
