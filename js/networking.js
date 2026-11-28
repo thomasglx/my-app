@@ -350,10 +350,56 @@ const Networking = (() => {
       card("Weekly funnel", null, `<table class="ftable"><thead><tr><th>Week of</th><th>Requests</th><th>Accepted</th><th>First messages</th><th>Replies</th><th>Calls booked</th><th>Calls done</th></tr></thead><tbody>${rows}</tbody></table>`) +
       `<div class="kpis three">${seg}</div><div class="hint">Senior / junior is recorded for every request you add from now on.</div>` +
       card("Limits", null, `<form id="settings-form" class="settings">${[["requestsDayMax", "Requests per day"], ["requests7dMax", "Requests per 7 days"], ["messagesDayMax", "LinkedIn messages per day"], ["networkPerDay", "Old connections per day"], ["followupDays", "Follow-up after (days)"], ["keepWarmDays", "Keep warm after (days)"]]
-        .map(([k, l]) => `<label>${l}<input type="number" min="0" name="${k}" value="${S[k]}"></label>`).join("")}<button class="btn mini primary">Save</button></form>`);
+        .map(([k, l]) => `<label>${l}<input type="number" min="0" name="${k}" value="${S[k]}"></label>`).join("")}<button class="btn mini primary">Save</button></form>`) +
+      card("Your hooks", null, `<form id="hooks-form"><div class="addp-hint">What you share with people: one per line, <b>Label: word, word</b>. Shown as "In common with you" on each contact card and given to Claude for drafts. Stays in your private repo.</div>
+        <textarea class="ptext" name="hooks" rows="10" placeholder="SKEMA: skema">${esc(((st.ov.settings || {}).hooks || []).join("\n"))}</textarea><div class="comp-btns"><span class="grow"></span><button class="btn mini primary">Save</button></div></form>`);
   };
 
   // ------------------------------------------------------------ person sheet
+  /* LinkedIn profile as bubbles (read-only). The raw text stays stored for Claude's drafts. */
+  function profileView(p) {
+    const pr = (st.profiles || {})[p.id], raw = pr?.text || "";
+    const paste = `<details class="praw"><summary>${raw ? `Captured ${fmt(pr.at)}${pr.source === "bookmark" ? " with → MyApp" : ""} · show raw text` : "or paste it by hand"}</summary>
+      <textarea class="ptext" id="profile-text" rows="6" placeholder="Paste the whole LinkedIn profile page here">${esc(raw)}</textarea>
+      <div class="comp-btns"><span class="grow"></span><button class="btn mini" data-pact="profile">Save profile</button></div></details>`;
+    if (!raw) return `<div class="psec">LinkedIn profile</div><div class="pb-empty">No profile yet. Open their LinkedIn profile and click <b>→ MyApp</b> in your favorites bar.</div>${paste}`;
+    const pp = NetEngine.parseProfile(NetEngine.cleanProfile(raw, p.name).text), S = pp.sections;
+    const hooks = NetEngine.hooksFor(pp, (st.ov.settings || {}).hooks), yrs = NetEngine.careerYears(pp);
+    const sen = p.seniority || NetEngine.guessSeniority(pp);
+    const chips = [pp.location && `📍 ${esc(pp.location)}`, yrs != null && `${yrs} yr${yrs > 1 ? "s" : ""} of experience`, sen && `${esc(sen)}${p.seniority ? "" : " (auto)"}`,
+      pp.mutual && `👥 ${esc(pp.mutual.replace(/ other mutual connections?/, " mutual").replace(/ autres relations en commun/, " en commun"))}`].filter(Boolean);
+    const isD = NetEngine.isDates;
+    const entry = (e, kind) => {
+      const used = new Set([0]); const di = e.findIndex((l, i) => i > 0 && isD(l)); if (di > 0) used.add(di);
+      const sub = e[1] && !isD(e[1]) ? (used.add(1), e[1]) : "";
+      const loc = di > 0 && e[di + 1] && e[di + 1].length < 50 && !isD(e[di + 1]) ? (used.add(di + 1), e[di + 1]) : "";
+      const rest = e.filter((_, i) => !used.has(i));
+      const now = di > 0 && /present|aujourd/i.test(e[di]);
+      const [firm, type] = sub.split(" · ");
+      return `<div class="pb ${kind}${now ? " now" : ""}"><div class="pb-t">${esc(e[0])}${now ? `<span class="pb-now">now</span>` : ""}</div>
+        ${sub ? `<div class="pb-s">${esc(firm)}${type ? ` <span class="pb-tag">${esc(type)}</span>` : ""}</div>` : ""}
+        ${di > 0 || loc ? `<div class="pb-m">${di > 0 ? esc(e[di]) : ""}${loc ? `${di > 0 ? " · " : ""}${esc(loc)}` : ""}</div>` : ""}
+        ${rest.length ? `<div class="pb-d">${rest.map(esc).join("<br>")}</div>` : ""}</div>`;
+    };
+    const sec = (key, label, kind) => (S[key] || []).length ? `<div class="psec">${label}</div><div class="pb-list">${S[key].map(e => entry(e, kind)).join("")}</div>` : "";
+    const chipSec = (key, label, pair) => {
+      const items = (S[key] || []).flat();
+      const out = pair ? items.reduce((a, l, i) => (/proficiency|bilingu|natif|native|professionnel|élémentaire|elementary|limited|courant/i.test(l) && a.length ? (a[a.length - 1] += ` · ${l}`) : a.push(l), a), []) : items;
+      return out.length ? `<div class="psec">${label}</div><div class="pchips">${out.map(x => `<span class="pchip">${esc(x)}</span>`).join("")}</div>` : "";
+    };
+    const extra = ["VOLUNTEERING", "ORGANIZATIONS", "PROJECTS", "AWARDS", "CAUSES", "PUBLICATIONS", "COURSES"].filter(k => (S[k] || []).length);
+    return `<div class="psec">LinkedIn profile</div>
+      ${pp.headline ? `<div class="pheadline">${esc(pp.headline)}</div>` : ""}
+      ${chips.length ? `<div class="pchips">${chips.map(c => `<span class="pchip">${c}</span>`).join("")}</div>` : ""}
+      ${hooks.length ? `<div class="phooks"><div class="phooks-t">In common with you</div>${hooks.map(h => `<span class="phook">${esc(h.label)}<small>${esc(h.where.join(", "))}</small></span>`).join("")}</div>`
+        : `<div class="phooks none">Nothing in common found${((st.ov.settings || {}).hooks || []).length ? "" : " (add your schools, cities and past firms in Stats → Your hooks)"}.</div>`}
+      ${(S.ABOUT || []).length ? `<div class="psec">About</div><div class="pabout">${S.ABOUT.flat().map(esc).join("<br>")}</div>` : ""}
+      ${sec("EXPERIENCE", "Career", "job")}${sec("EDUCATION", "Education", "school")}
+      ${extra.map(k => sec(k, { VOLUNTEERING: "Volunteering", ORGANIZATIONS: "Associations", PROJECTS: "Projects", AWARDS: "Awards", CAUSES: "Causes", PUBLICATIONS: "Publications", COURSES: "Courses" }[k], "extra")).join("")}
+      ${sec("CERTIFICATIONS", "Certifications", "cert")}${sec("TEST SCORES", "Test scores", "cert")}
+      ${chipSec("LANGUAGES", "Languages", true)}${chipSec("SKILLS", "Skills")}
+      ${paste}`;
+  }
   function openPerson(id) {
     const p = person(id); if (!p) return;
     const T = todayIso();
@@ -371,17 +417,15 @@ const Networking = (() => {
         <button class="btn mini" data-pact="book">Book call</button><button class="btn mini" data-pact="note">Note</button>
         ${p.st.stage === "closed" ? `<button class="btn mini ghost" data-pact="reopen">Reopen</button>` : `<button class="btn mini ghost" data-pact="close">Close</button>`}</div>
       <div id="pact-box"></div>
-      <div class="psec">Details</div><div class="pform">${field("firm", "Firm")}${field("title", "Title")}${field("linkedin", "LinkedIn URL", "https://www.linkedin.com/in/…")}${field("email", "E-mail")}${field("phone", "Phone")}${field("alumni", "Shared school")}
+      ${profileView(p)}
+      <div class="psec">History</div><div class="timeline">${tl || empty("Nothing yet.")}</div>
+      ${(p.notes || []).length ? `<div class="psec">Notes from the Excel</div>` + p.notes.map(s => `<div class="pnote">${esc(s)}</div>`).join("") : ""}
+      <details class="pdetails"><summary>✎ Edit details</summary><div class="pform">${field("firm", "Firm")}${field("title", "Title")}${field("linkedin", "LinkedIn URL", "https://www.linkedin.com/in/…")}${field("email", "E-mail")}${field("phone", "Phone")}${field("alumni", "Shared school")}
         <label class="pf-edit"><span>Seniority</span><select data-field="seniority">${["", "senior", "junior", "student"].map(s => `<option ${p.seniority === s ? "selected" : ""} value="${s}">${s || "–"}</option>`).join("")}</select></label>
         <label class="pf-edit"><span>Relationship</span><select data-field="relationship">${["", "friend", "classmate", "family", "not relevant"].map(s => `<option ${(p.relationship || "") === s ? "selected" : ""} value="${s}">${s || "networking contact"}</option>`).join("")}</select></label>
-        <label class="pf-edit"><span>Language</span><select data-field="lang">${["FR", "EN"].map(s => `<option ${String(p.lang).toUpperCase() === s ? "selected" : ""}>${s}</option>`).join("")}</select></label></div>
-      <div class="psec">LinkedIn profile <span class="muted small">(on their LinkedIn profile, click → MyApp in your favorites bar)</span></div>
-      <textarea class="ptext" id="profile-text" rows="4" placeholder="Paste the profile here: drafts will use it in phase C.">${esc((st.profiles || {})[p.id]?.text || "")}</textarea>
-      <div class="comp-btns"><span class="grow"></span><button class="btn mini" data-pact="profile">Save profile</button></div>
-      <div class="psec">History</div><div class="timeline">${tl || empty("Nothing yet.")}</div>
-      ${(p.notes || []).length ? `<div class="psec">Notes from the Excel</div>` + p.notes.map(s => `<div class="pnote">${esc(s)}</div>`).join("") : ""}`;
+        <label class="pf-edit"><span>Language</span><select data-field="lang">${["FR", "EN"].map(s => `<option ${String(p.lang).toUpperCase() === s ? "selected" : ""}>${s}</option>`).join("")}</select></label></div></details>`;
     $("person-wrap").hidden = false; $("person").dataset.pid = id;
-    if (st.profiles === null && !preview()) GH.readJson(PROFILES).then(x => { st.profiles = x || {}; const el = $("profile-text"); if (el && !el.value && st.profiles[id]) el.value = st.profiles[id].text; }).catch(() => {});
+    if (st.profiles === null && !preview()) GH.readJson(PROFILES).then(x => { st.profiles = x || {}; if ($("person").dataset.pid === id) openPerson(id); }).catch(() => {});
   }
   function personAction(act) {
     const id = $("person").dataset.pid, p = person(id), box = $("pact-box");
@@ -523,6 +567,11 @@ const Networking = (() => {
       toast(`${r.list.length} pending on LinkedIn · ${w} marked withdrawn · ${a} added`, true);
       return save(OVR, d => ({ ...d, people_new: { ...(d.people_new || {}), ...pn }, events: [...(d.events || []), ...r.events], sent_sync_at: at }), "sync sent invitations");
     }
+    if (f.id === "hooks-form") {
+      const hooks = f.hooks.value.split("\n").map(x => x.trim()).filter(Boolean);
+      st.ov.settings = { ...(st.ov.settings || {}), hooks }; render(); toast("Hooks saved", true);
+      return save(OVR, d => ({ ...d, settings: { ...(d.settings || {}), hooks } }), "hooks");
+    }
     if (f.id === "settings-form") {
       const x = Object.fromEntries([...new FormData(f).entries()].map(([k, v]) => [k, +v]));
       st.ov.settings = { ...(st.ov.settings || {}), ...x }; model(); render(); toast("Saved", true);
@@ -568,6 +617,7 @@ const Networking = (() => {
       const pa = e.target.closest("[data-pact]"); if (pa) return personAction(pa.dataset.pact);
       const un = e.target.closest("[data-undo]"); if (un) { const id = un.dataset.undo; st.ov.deleted_events = [...(st.ov.deleted_events || []), id]; model(); render(); openPerson($("person").dataset.pid); return save(OVR, d => ({ ...d, deleted_events: [...(d.deleted_events || []), id] }), "undo"); }
     });
+    $("person-wrap").addEventListener("click", e => { const x = e.target.closest(".pabout, .pb-d"); if (x) x.classList.toggle("open"); });
     $("person-wrap").addEventListener("submit", e => { e.preventDefault(); personForm(e.target); });
     $("person-wrap").addEventListener("change", e => { const f = e.target.closest("[data-field]"); if (f) patchPerson($("person").dataset.pid, { [f.dataset.field]: f.value.trim() }, "edit person"); });
     document.addEventListener("keydown", e => { if (e.key === "Escape") $("person-wrap").hidden = true; });
@@ -593,13 +643,16 @@ const Networking = (() => {
     if (!p) {
       if (!name || !slugOf(url)) return toast("Open a LinkedIn profile page (linkedin.com/in/…) before clicking the bookmark");
       const id = "li-" + slugOf(url);
-      newPerson({ id, name, title: cp.title || text.split("\n").filter(Boolean)[1] || "", firm: cp.firm, lang: "FR", seniority: "", origin: "app", linkedin: url, notes: [] }, [], "new contact " + name);
+      newPerson({ id, name, title: cp.title || text.split("\n").filter(Boolean)[1] || "", firm: cp.firm, lang: /france|paris|lyon|suisse|switzerland|gen[eè]v|lausanne|belgi|bruxelles|brussels|luxembourg|monaco/i.test(NetEngine.parseProfile(cp.text).location) ? "FR" : "EN", seniority: NetEngine.guessSeniority(NetEngine.parseProfile(cp.text)), origin: "app", linkedin: url, notes: [] }, [], "new contact " + name);
       p = person(id);
     } else {
       const fix = {};
       if (!p.linkedin && slugOf(url)) fix.linkedin = url;
       if (!p.title && cp.title) fix.title = cp.title;
       if (!p.firm && cp.firm) fix.firm = cp.firm;
+      const pp = NetEngine.parseProfile(cp.text);
+      if (!p.seniority) { const g = NetEngine.guessSeniority(pp); if (g) fix.seniority = g; }
+      if (!p.alumni) { const sch = NetEngine.hooksFor(pp, (st.ov.settings || {}).hooks).filter(h => h.where.includes("education")).map(h => h.label).join(", "); if (sch) fix.alumni = sch; }
       if (Object.keys(fix).length) patchPerson(p.id, fix, "profile fields " + p.name);
     }
     const entry = { text, at: nowIso(), source: "bookmark" };

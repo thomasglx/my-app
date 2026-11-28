@@ -16,6 +16,9 @@ const m = NetEngine.build(base, ov, offers, today, inbox);
 const t = m.today;
 const PROMPT = { reply: "reply", first: "first_message", followup: "followup", thanks: "thanks", keep_warm: "keep_warm" };
 
+const clean = p => (profiles[p.id] || {}).text ? NetEngine.cleanProfile(profiles[p.id].text, p.name).text : "";
+const profileText = p => clean(p);
+const profileHooks = p => clean(p) ? NetEngine.hooksFor(NetEngine.parseProfile(clean(p)), (ov.settings || {}).hooks).map(h => `${h.label} (${h.where.join(", ")})`) : [];
 const wanted = [...t.replies, ...t.nudges, ...m.P.filter(p => p.st.stage === "thanks"), ...t.first, ...t.followups, ...t.keepWarm, ...t.dormant];
 const seen = new Set(), out = [];
 for (const p of wanted) {
@@ -31,7 +34,8 @@ for (const p of wanted) {
     form: NetEngine.form(p), channel: kind === "reply" || kind === "keep_warm" ? p.st.bestChannel : "linkedin",
     person: { id: p.id, name: p.name, title: p.title, firm: p.firm, lang: p.lang, seniority: p.seniority, alumni: p.alumni,
               introduced_by: p.introduced_by, relationship: p.relationship || "", notes: (p.notes || []).slice(-6) },
-    profile: (profiles[p.id] || {}).text || "",
+    profile: profileText(p),
+    in_common: profileHooks(p),
     conversation: conv,
   });
   if (out.length >= max) break;

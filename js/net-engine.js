@@ -339,21 +339,28 @@ const NetEngine = (() => {
       .filter(Boolean).join("\r\n");
   }
 
-  /* LinkedIn page text (bookmark) → profile only: header, About, Experience, Education, certifications, skills, languages.
-     Drops menus, buttons, the Activity feed (reposts) and the right-hand column ("More profiles for you"…). */
+  /* LinkedIn page text (bookmark) → profile only: header, About, Experience, Education, certifications, skills, languages,
+     extracurriculars. Drops menus, buttons, the Activity feed (reposts) and the right-hand column. English or French UI. */
+  const SECTIONS = { about: "ABOUT", infos: "ABOUT", featured: "FEATURED", "a la une": "FEATURED", experience: "EXPERIENCE",
+    education: "EDUCATION", formation: "EDUCATION", "licenses & certifications": "CERTIFICATIONS", "licences et certifications": "CERTIFICATIONS",
+    skills: "SKILLS", competences: "SKILLS", languages: "LANGUAGES", langues: "LANGUAGES", volunteering: "VOLUNTEERING", "volunteer experience": "VOLUNTEERING",
+    benevolat: "VOLUNTEERING", projects: "PROJECTS", projets: "PROJECTS", "honors & awards": "AWARDS", "distinctions et prix": "AWARDS", distinctions: "AWARDS",
+    courses: "COURSES", cours: "COURSES", publications: "PUBLICATIONS", recommendations: "RECOMMENDATIONS", recommandations: "RECOMMENDATIONS",
+    "test scores": "TEST SCORES", "resultats aux tests": "TEST SCORES", organizations: "ORGANIZATIONS", organisations: "ORGANIZATIONS",
+    causes: "CAUSES", "causes solidaires": "CAUSES" };
+  const plain = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
   function cleanProfile(text, name) {
     let t = String(text || "").replace(/\r/g, "");
     if (name) { const i = t.indexOf(name); if (i > 0) t = t.slice(i); }
-    const stop = /^(Interests|More profiles for you|People you may know|People also viewed|Explore Premium profiles|You might like|Pages for you)$/;
-    const skipSec = /^(Highlights|Activity|Analytics|Resources)$/;
-    const main = /^(About|Featured|Experience|Education|Licenses & certifications|Skills|Languages|Volunteering|Projects|Honors & awards|Courses|Publications|Recommendations|Test scores|Organizations)( \(\d+\))?$/;
-    const junk = /^(More|Message|Connect|Follow|Following|Endorse|Endorsed|Show translation|See translation|Contact info|·|Show all.*|Show more.*|\d[\d,]*|…\s*more|Save to PDF|Present|Pending)$/;
+    const stop = /^(interests|centres d'interet|more profiles for you|autres profils pour vous|plus de profils pour vous|people you may know|vous connaissez peut-etre|people also viewed|explore premium profiles|you might like|pages for you|pages pour vous|about accessibility)$/;
+    const skipSec = /^(highlights|points forts|activity|activite|analytics|analyses|resources|ressources)$/;
+    const junk = /^(More|Plus|Message|Connect|Se connecter|Follow|Suivre|Following|Abonné|Endorse|Recommander|Endorsed|Show translation|See translation|Voir la traduction|Contact info|Coordonnées|·|Show all.*|Afficher tou.*|Show more.*|Voir plus.*|\d[\d,  ]*|…\s*(more|plus|voir plus)|Save to PDF|Pending|En attente|Present|Aujourd’hui|aujourd'hui)$/;
     const out = []; let skip = false;
     for (const raw of t.split("\n")) {
-      const l = raw.trim();
-      if (stop.test(l)) break;
-      if (skipSec.test(l)) { skip = true; continue; }
-      if (main.test(l)) { skip = false; out.push("", l.replace(/ \(\d+\)$/, "").toUpperCase()); continue; }
+      const l = raw.trim(), k = plain(l).replace(/ \(\d+\)$/, "");
+      if (stop.test(k)) break;
+      if (skipSec.test(k)) { skip = true; continue; }
+      if (SECTIONS[k]) { skip = false; out.push("", SECTIONS[k]); continue; }
       if (skip || junk.test(l)) continue;
       if (!l) { if (out.length && out[out.length - 1] !== "") out.push(""); continue; }
       if (out[out.length - 1] === l) continue;  // LinkedIn repeats lines (name, headline)
@@ -362,13 +369,60 @@ const NetEngine = (() => {
     const again = name ? out.indexOf(name, 1) : -1;  // the header block appears twice: keep the fuller second copy
     if (again > 0 && again < 6) out.splice(0, again);
     const res = out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-    // current role = first entry under EXPERIENCE: "Title" then "Firm · Contract type"
-    const ex = out.indexOf("EXPERIENCE"), e = ex >= 0 ? out.slice(ex + 1).filter(Boolean) : [];
-    return { text: res, title: e[0] || "", firm: (e[1] || "").split(" · ")[0].trim() };
+    const pp = parseProfile(res);
+    const cur = pp.sections.EXPERIENCE?.[0] || [];
+    return { text: res, title: cur[0] || "", firm: (cur[1] || "").split(" · ")[0].trim() };
+  }
+
+  /* Cleaned profile text → { name, headline, location, mutual, sections: { EXPERIENCE: [[line, line…], …], … } } */
+  const SECTION_NAMES = [...new Set(Object.values(SECTIONS))];
+  function parseProfile(text) {
+    const lines = String(text || "").split("\n").map(x => x.trim());
+    const head = [], sections = {}; let cur = null, entry = null;
+    for (const l of lines) {
+      if (SECTION_NAMES.includes(l)) { cur = sections[l] = []; entry = null; continue; }
+      if (!cur) { if (l) head.push(l); continue; }
+      if (!l) { entry = null; continue; }
+      if (!entry) { entry = []; cur.push(entry); }
+      entry.push(l);
+    }
+    const name = head[0] || "", rest = head.slice(1).filter(l => !/^·/.test(l));
+    const headline = rest[0] || "", location = rest[1] && !/connection|relation|mutual|commun/i.test(rest[1]) ? rest[1] : "";
+    const mutual = head.find(l => /mutual connection|relations? en commun/i.test(l)) || "";
+    const connections = head.find(l => /^\d[\d,+ ]*\s*(connections|relations)$/i.test(l)) || "";
+    return { name, headline, location, mutual, connections, sections };
+  }
+  const isDates = l => /((19|20)\d{2}|Present|aujourd)/i.test(l) && /(-|–|·|Present|aujourd|\d{4}\s*$)/i.test(l) && l.length < 70;
+  /* years of work since the first non-internship job (approximate) */
+  function careerYears(pp) {
+    const yrs = (pp.sections.EXPERIENCE || []).filter(e => !isStudent(e.join(" "))).flatMap(e => e.filter(isDates).flatMap(l => (l.match(/(19|20)\d{2}/g) || []).map(Number)));
+    return yrs.length ? new Date().getFullYear() - Math.min(...yrs) : null;
+  }
+  const SENIOR = /\b(director|directeur|directrice|head|responsable|partner|associ[ée]|managing|md|vp|vice[- ]president|principal|cio|ceo|cfo|deputy|senior portfolio|senior fund|lead portfolio)\b/i;
+  function guessSeniority(pp) {
+    const cur = (pp.sections.EXPERIENCE || [])[0] || [], t = cur.slice(0, 2).join(" ") + " " + pp.headline;
+    if (isStudent(cur.slice(0, 2).join(" "))) return "student";
+    const y = careerYears(pp);
+    if (SENIOR.test(cur[0] || pp.headline) || (y != null && y >= 8)) return "senior";
+    return cur.length || pp.headline ? "junior" : "";
+  }
+  /* what you share with them: settings.hooks = ["Label: word, word", …] matched in each section */
+  function hooksFor(pp, hookLines) {
+    const found = [];
+    for (const h of hookLines || []) {
+      const [label, words] = String(h).includes(":") ? [h.split(":")[0].trim(), h.split(":").slice(1).join(":")] : [h.trim(), h];
+      const ws = words.split(",").map(plain).filter(Boolean);
+      const hit = sec => ws.some(w => new RegExp("(^|[^a-z0-9])" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "($|[^a-z0-9])").test(plain(sec)));
+      const where = [];
+      if (hit(pp.headline + " " + pp.location)) where.push("headline");
+      for (const [k, es] of Object.entries(pp.sections)) if (k !== "SKILLS" && es.some(e => hit(e.join(" ")))) where.push(k.toLowerCase());
+      if (where.length) found.push({ label, where: [...new Set(where)] });
+    }
+    return found;
   }
 
   const DRAFT_KIND = { reply: "reply", talking: "reply", first: "first", dormant: "first", followup: "followup", thanks: "thanks", keep_warm: "keep_warm" };
   const draftKey = p => p.st.basis && DRAFT_KIND[p.st.stage] ? `${p.id}:${DRAFT_KIND[p.st.stage]}:${p.st.basis}` : null;
   return { DRAFT_KIND, draftKey, build, funnel, templates, fill, form, unresolved, ics, vcard, levelOf, firmMatch, norm, nameKey,
-           addDays, diff, day, isoDay, DEFAULTS, PERSONAL, parseSent, syncSent, cleanProfile };
+           addDays, diff, day, isoDay, DEFAULTS, PERSONAL, parseSent, syncSent, cleanProfile, parseProfile, guessSeniority, careerYears, hooksFor, isDates };
 })();
