@@ -35,6 +35,7 @@ for (const p of wanted) {
     person: { id: p.id, name: p.name, title: p.title, firm: p.firm, lang: p.lang, seniority: p.seniority, alumni: p.alumni,
               introduced_by: p.introduced_by, relationship: p.relationship || "", notes: (p.notes || []).slice(-6) },
     profile: profileText(p),
+    profile_source: (profiles[p.id] || {}).source || "",
     in_common: profileHooks(p),
     conversation: conv,
   });

@@ -1,6 +1,7 @@
 #!/bin/bash
 # MyApp Mac sync — installer. Run in Terminal:
 #   bash <(curl -fsSL https://thomasglx.github.io/my-app/mac/install.sh)
+# Update:     bash <(curl -fsSL https://thomasglx.github.io/my-app/mac/install.sh) update
 # Uninstall:  bash <(curl -fsSL https://thomasglx.github.io/my-app/mac/install.sh) uninstall
 set -e
 DIR="$HOME/Library/Application Support/MyAppSync"
@@ -12,6 +13,17 @@ if [ "$1" = "uninstall" ]; then
   launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
   rm -f "$PLIST"
   echo "✓ MyApp sync stopped and removed (your files in $DIR were kept)."
+  exit 0
+fi
+
+if [ "$1" = "update" ]; then
+  curl -fsSL "$URL?$(date +%s)" -o "$DIR/myapp_sync.py"
+  if ! security find-generic-password -s myapp-pdl -w >/dev/null 2>&1; then
+    read -r -s -p "People Data Labs API key (Enter to skip): " K; echo
+    [ -n "$K" ] && security add-generic-password -U -a myapp -s myapp-pdl -T /usr/bin/security -w "$(printf %s "$K" | tr -cd 'A-Za-z0-9')" >/dev/null && echo "✓ key saved"
+  fi
+  launchctl kickstart -k "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  echo "✓ MyApp sync updated and restarted."
   exit 0
 fi
 

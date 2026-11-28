@@ -485,3 +485,6 @@ tr.click:hover td { background: rgba(82,109,117,.06); }
 .capbar.on { position: sticky; top: 8px; z-index: 5; box-shadow: var(--shadow); }
 .capbar.done { background: var(--s-applied-bg); border-color: var(--s-applied); }
 .capbtns { display: flex; gap: 6px; flex-shrink: 0; }
+.psrc { font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: 6px; }
+.psrc.pdl, .psrc.web { color: var(--s-action); }
+.psrc-l { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; }

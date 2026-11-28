@@ -360,7 +360,7 @@ const Networking = (() => {
   /* LinkedIn profile as bubbles (read-only). The raw text stays stored for Claude's drafts. */
   function profileView(p) {
     const pr = (st.profiles || {})[p.id], raw = pr?.text || "";
-    const paste = `<details class="praw"><summary>${raw ? `Captured ${fmt(pr.at)}${pr.source === "bookmark" ? " with → MyApp" : ""} · show raw text` : "or paste it by hand"}</summary>
+    const paste = `<details class="praw"><summary>${raw ? "Show raw text" : "or paste it by hand"}</summary>
       <textarea class="ptext" id="profile-text" rows="6" placeholder="Paste the whole LinkedIn profile page here">${esc(raw)}</textarea>
       <div class="comp-btns"><span class="grow"></span><button class="btn mini" data-pact="profile">Save profile</button></div></details>`;
     if (!raw) return `<div class="psec">LinkedIn profile</div><div class="pb-empty">No profile yet. Open their LinkedIn profile and click <b>→ MyApp</b> in your favorites bar.</div>${paste}`;
@@ -389,7 +389,10 @@ const Networking = (() => {
       return out.length ? `<div class="psec">${label}</div><div class="pchips">${out.map(x => `<span class="pchip">${esc(x)}</span>`).join("")}</div>` : "";
     };
     const extra = ["VOLUNTEERING", "ORGANIZATIONS", "PROJECTS", "AWARDS", "CAUSES", "PUBLICATIONS", "COURSES"].filter(k => (S[k] || []).length);
-    return `<div class="psec">LinkedIn profile</div>
+    const SRC = { bookmark: "captured from LinkedIn", pdl: "People Data Labs (can be a few months old)", web: "web lookup by Claude (check before relying on it)" };
+    const src = `<span class="psrc ${esc(pr.source || "")}">${esc(SRC[pr.source] || "pasted")} · ${fmt(pr.at)}</span>${(pr.links || []).length ? ` ${pr.links.map((u, i) => `<a class="psrc-l" href="${esc(u)}" target="_blank" rel="noopener">source ${i + 1}</a>`).join(" ")}` : ""}`;
+    return `<div class="psec">Profile ${src}</div>
+      ${pr.source && pr.source !== "bookmark" ? `<div class="hint">Want it exact? Open their LinkedIn and click → MyApp: it replaces this.</div>` : ""}
       ${pp.headline ? `<div class="pheadline">${esc(pp.headline)}</div>` : ""}
       ${chips.length ? `<div class="pchips">${chips.map(c => `<span class="pchip">${c}</span>`).join("")}</div>` : ""}
       ${hooks.length ? `<div class="phooks"><div class="phooks-t">In common with you</div>${hooks.map(h => `<span class="phook">${esc(h.label)}<small>${esc(h.where.join(", "))}</small></span>`).join("")}</div>`

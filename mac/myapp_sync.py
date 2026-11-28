@@ -294,79 +294,96 @@ def read_linkedin_mail(m, since, state):
 
 
 # ------------------------------------------------------------------ profiles (People Data Labs, free tier)
-PDL_PER_DAY, PDL_PER_MONTH = 3, 95
+PDL_PER_DAY, PDL_PER_MONTH = 30, 95
+MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
+
+
+def _ym(v):
+    """PDL dates are '2024', '2024-04' or '2024-04-01' -> 'Apr 2024'."""
+    v = str(v or "")
+    if re.match(r"^\d{4}-\d{2}", v): return f"{MONTHS[int(v[5:7]) - 1]} {v[:4]}"
+    return v[:4]
 
 
 def pdl_text(d):
-    """PDL person record -> readable profile text for the drafts."""
-    L = [d.get("full_name", "").title(), " · ".join(x for x in (d.get("job_title"), d.get("job_company_name"), d.get("location_name")) if x)]
-    if d.get("summary"): L += ["", "About", d["summary"][:1200]]
-    exp = d.get("experience") or []
+    """PDL person record -> text laid out like a LinkedIn page (one block per job/school), so the card shows it as bubbles."""
+    SMALL = {"of", "at", "and", "the", "for", "in", "de", "du", "des", "la", "le", "et", "d'", "en", "&"}
+    UP = {"ubs", "bnp", "axa", "hsbc", "jp", "cfa", "msc", "mba", "am", "ib", "ecm", "dcm", "m&a", "ceo", "cio", "cfo", "coo", "vp", "md", "uk", "usa",
+          "hec", "essec", "edhec", "em", "iae", "ey", "kpmg", "pwc", "bpce", "cic", "lcl", "sg", "cib", "amf", "ofi", "lfde", "dnca", "cpr", "esg", "isg",
+          "skema", "kedge", "insead", "lse", "ucl", "epfl", "eth", "ubp", "lgt", "bcv", "bcge", "rbc", "bnpp", "cacib", "ssga", "pgim", "fx", "pe", "vc"}
+    cap = lambda x: " ".join(w.upper() if w.lower() in UP else w.lower() if (i and w.lower() in SMALL) else w[:1].upper() + w[1:]
+                             for i, w in enumerate(str(x or "").split()))
+    head = " at ".join(x for x in (cap(d.get("job_title")), cap(d.get("job_company_name"))) if x)
+    L = [cap(d.get("full_name")), head, cap(d.get("location_name"))]
+    if d.get("summary"): L += ["", "About", d["summary"][:1500]]
+    exp = sorted(d.get("experience") or [], key=lambda e: (e.get("end_date") or "9999", e.get("start_date") or ""), reverse=True)
     if exp:
         L += ["", "Experience"]
-        for e in exp[:12]:
-            t = (e.get("title") or {}).get("name") or ""
-            c = (e.get("company") or {}).get("name") or ""
-            L.append(f"- {t.title()} — {c.title()} ({e.get('start_date') or '?'} – {e.get('end_date') or 'present'})")
+        for e in exp[:15]:
+            t = cap((e.get("title") or {}).get("name")); c = cap((e.get("company") or {}).get("name"))
+            dates = f"{_ym(e.get('start_date')) or '?'} - {_ym(e.get('end_date')) if e.get('end_date') else 'Present'}"
+            loc = ((e.get("location_names") or [None])[0]) or ""
+            L += ["", t or c, c if t else "", dates] + ([cap(loc)] if loc else [])
     edu = d.get("education") or []
     if edu:
         L += ["", "Education"]
-        for e in edu[:6]:
-            sch = (e.get("school") or {}).get("name") or ""
-            deg = ", ".join((e.get("degrees") or []) + (e.get("majors") or []))
-            L.append(f"- {sch.title()}{' — ' + deg if deg else ''} ({e.get('end_date') or ''})")
-    L += ["", "(Source: People Data Labs database — can be a few months old)"]
-    return "\n".join(L)
+        for e in edu[:8]:
+            deg = ", ".join((e.get("degrees") or []) + [cap(x) for x in (e.get("majors") or [])])
+            yrs = " – ".join(x for x in (_ym(e.get("start_date"))[-4:], _ym(e.get("end_date"))[-4:]) if x)
+            L += ["", cap((e.get("school") or {}).get("name"))] + ([deg] if deg else []) + ([yrs] if yrs else [])
+    certs = d.get("certifications") or []
+    if certs:
+        L += ["", "Licenses & certifications"]
+        for c in certs[:8]: L += ["", cap(c.get("name")), cap(c.get("organization"))]
+    langs = [cap(x.get("name") if isinstance(x, dict) else x) for x in (d.get("languages") or [])]
+    if langs: L += ["", "Languages"] + langs
+    return "\n".join(x for x in L if x is not None).strip()
 
 
 def enrich_profiles(state):
-    """Once a day: fetch the profile of up to 3 people who recently accepted and have no profile yet."""
+    """Up to 30 a day: fetch the profiles at the top of state/networking_profile_queue.json (written by the 4 daily
+       Claude runs, most urgent first) from People Data Labs. Never replaces a profile you captured with → MyApp."""
     key = secret("myapp-pdl")
     if not key: return "no key (optional)"
-    today = datetime.now().strftime("%Y-%m-%d"); month = today[:7]
-    if state.get("pdl_day") == today: return state.get("pdl_status", "ok")
+    now = datetime.now(); today = now.strftime("%Y-%m-%d"); month = today[:7]
+    if state.get("pdl_next", "") > now.isoformat(): return state.get("pdl_status", "ok")
+    state["pdl_next"] = (now + timedelta(minutes=30)).isoformat()       # look at the queue every 30 min
     used = state.setdefault("pdl_month", {}).get(month, 0)
+    day = state.setdefault("pdl_days", {}); today_n = day.get(today, 0)
     if used >= PDL_PER_MONTH: return f"ok (monthly limit reached: {used})"
-    base = gh("export/networking.json", raw=True) or {}
-    ov = gh("state/networking_overrides.json", raw=True) or {}
-    inbox = gh(OUT, raw=True) or {}
+    if today_n >= PDL_PER_DAY: return state.get("pdl_status", "ok")
+    queue = (gh("state/networking_profile_queue.json", raw=True) or {}).get("items", [])
     cur = gh("state/networking_profiles.json") or {}
     profiles = json.loads(base64.b64decode(cur["content"]).decode()) if cur.get("content") else {}
-    people = {p["id"]: p for p in base.get("people", [])}
-    people.update({k: {**v, "id": k} for k, v in (ov.get("people_new") or {}).items()})
-    for k, patch in (ov.get("people") or {}).items():
-        if k in people: people[k] = {**people[k], **patch}
-    evs = base.get("events", []) + inbox.get("events", []) + ov.get("events", [])
-    hidden = set(ov.get("deleted_events") or [])
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=21)).strftime("%Y-%m-%d")
-    acc, done = {}, set()
-    for e in evs:
-        if e["id"] in hidden: continue
-        if e["type"] == "accepted" and e["at"][:10] >= cutoff: acc[e["person"]] = max(acc.get(e["person"], ""), e["at"])
-        if e["type"] in ("message_sent", "closed", "skipped"): done.add(e["person"])
-    cands = sorted((at, pid) for pid, at in acc.items() if pid not in done and pid not in profiles and people.get(pid, {}).get("linkedin")
-                   and people[pid].get("relationship") not in ("friend", "classmate", "family", "not relevant"))
-    got = 0
-    for at, pid in reversed(cands):
-        if got >= PDL_PER_DAY or used >= PDL_PER_MONTH: break
-        url = people[pid]["linkedin"]
+    got = tried = 0
+    for q in queue:
+        if today_n >= PDL_PER_DAY or used >= PDL_PER_MONTH: break
+        pid, url = q.get("id"), q.get("linkedin")
+        have = profiles.get(pid) or {}
+        if not url or "pdl" in (have.get("tried") or []) or (have.get("text") and not str(have.get("source", "")).startswith("web")): continue
         req = urllib.request.Request("https://api.peopledatalabs.com/v5/person/enrich?min_likelihood=6&profile=" + urllib.parse.quote(url))
         req.add_header("X-Api-Key", key)
+        tried += 1
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
                 d = json.loads(r.read()).get("data") or {}
-            profiles[pid] = {"text": pdl_text(d), "at": iso(datetime.now(timezone.utc)), "source": "pdl"}
-            got += 1; used += 1
+            profiles[pid] = {"text": pdl_text(d), "at": iso(datetime.now(timezone.utc)), "source": "pdl", "tried": (have.get("tried") or []) + ["pdl"]}
+            got += 1; used += 1; today_n += 1
         except urllib.error.HTTPError as e:
-            if e.code == 404: profiles.setdefault(pid, {"text": "", "at": iso(datetime.now(timezone.utc)), "source": "pdl: not found"})
-            elif e.code in (401, 402, 403, 429): state["pdl_day"] = today; return f"error {e.code}"
-    if got or any(v.get("source") == "pdl: not found" for v in profiles.values()):
+            if e.code == 404: profiles[pid] = {**have, "tried": (have.get("tried") or []) + ["pdl"]}  # not in their database
+            elif e.code in (401, 402, 403, 429):
+                state["pdl_status"] = f"error {e.code}"; state["pdl_next"] = (now + timedelta(hours=6)).isoformat(); break
+        except Exception:
+            break
+    if tried:
         body = {"message": f"Profiles: {got} from People Data Labs", "content": base64.b64encode(json.dumps(profiles, ensure_ascii=False, indent=1).encode()).decode(),
                 "committer": {"name": "MyApp Mac", "email": "myapp@users.noreply.github.com"}}
         if cur.get("sha"): body["sha"] = cur["sha"]
         if not DRY: gh("state/networking_profiles.json", "PUT", body)
-    state["pdl_month"][month] = used; state["pdl_day"] = today
-    state["pdl_status"] = f"ok ({got} today, {used}/{PDL_PER_MONTH} this month)"
+    state["pdl_month"][month] = used; day[today] = today_n
+    for k in list(day): 
+        if k < (now - timedelta(days=40)).strftime("%Y-%m-%d"): del day[k]
+    state["pdl_status"] = f"ok ({today_n} today, {used}/{PDL_PER_MONTH} this month)"
     return state["pdl_status"]
 
 
