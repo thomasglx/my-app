@@ -376,9 +376,9 @@ const Networking = (() => {
       const rest = e.filter((_, i) => !used.has(i));
       const now = di > 0 && /present|aujourd/i.test(e[di]);
       const [firm, type] = sub.split(" · ");
-      return `<div class="pb ${kind}${now ? " now" : ""}"><div class="pb-t">${esc(e[0])}${now ? `<span class="pb-now">now</span>` : ""}</div>
+      return `<div class="pb ${kind}${now ? " now" : ""}"><div class="pb-h"><div class="pb-t">${esc(e[0])}${now ? `<span class="pb-now">now</span>` : ""}</div>${di > 0 ? `<div class="pb-date">${esc(e[di])}</div>` : ""}</div>
         ${sub ? `<div class="pb-s">${esc(firm)}${type ? ` <span class="pb-tag">${esc(type)}</span>` : ""}</div>` : ""}
-        ${di > 0 || loc ? `<div class="pb-m">${di > 0 ? esc(e[di]) : ""}${loc ? `${di > 0 ? " · " : ""}${esc(loc)}` : ""}</div>` : ""}
+        ${loc ? `<div class="pb-m">${esc(loc)}</div>` : ""}
         ${rest.length ? `<div class="pb-d">${rest.map(esc).join("<br>")}</div>` : ""}</div>`;
     };
     const sec = (key, label, kind) => (S[key] || []).length ? `<div class="psec">${label}</div><div class="pb-list">${S[key].map(e => entry(e, kind)).join("")}</div>` : "";
@@ -415,7 +415,7 @@ const Networking = (() => {
       <div class="pbtns"><a class="btn mini ghost" href="${esc(profileUrl(p))}" target="_blank" rel="noopener">LinkedIn ↗</a>
         <button class="btn mini" data-pact="replied">They replied</button><button class="btn mini" data-pact="logged">Log contact</button>
         <button class="btn mini" data-pact="book">Book call</button><button class="btn mini" data-pact="note">Note</button>
-        ${p.st.stage === "closed" ? `<button class="btn mini ghost" data-pact="reopen">Reopen</button>` : `<button class="btn mini ghost" data-pact="close">Close</button>`}</div>
+        ${p.st.stage === "closed" ? `<button class="btn mini ghost" data-pact="reopen">Reopen</button>` : `<button class="btn mini ghost" data-pact="close" title="Stop following this person: they leave every list">Stop following</button>`}</div>
       <div id="pact-box"></div>
       ${profileView(p)}
       <div class="psec">History</div><div class="timeline">${tl || empty("Nothing yet.")}</div>
@@ -437,6 +437,7 @@ const Networking = (() => {
       note: `<form class="pact" data-do="note"><textarea name="text" rows="3" placeholder="Note" required></textarea><label class="small"><input type="checkbox" name="recap"> This is a call recap</label><div class="comp-btns"><span class="grow"></span><button class="btn mini primary">Save</button></div></form>`,
     };
     if (forms[act]) { box.innerHTML = forms[act]; return; }
+    if (act === "close" && !confirm(`Stop following ${p.name}? They leave every list (undo from History).`)) return;
     if (act === "close") return addEvents([ev(id, "closed", { reason: "closed by you" })], "close " + p.name), openPerson(id);
     if (act === "reopen") return addEvents([ev(id, "reopened")], "reopen " + p.name), openPerson(id);
     if (act === "profile") {
