@@ -218,7 +218,7 @@ const Networking = (() => {
     const r = st.m.P.filter(p => p.st.stage === "reply");
     return `<div class="page-intro">People who answered, on any channel. Reply and ask when they're available (never propose slots).</div>` +
       card("Replies to send", r.length, r.map(p => msgRow(p, "reply", `${esc(CH[p.st.s.lastRecv.channel] || "LinkedIn")} · ${esc(p.st.info)}`)).join("") || empty("No reply waiting.")) +
-      card("In conversation", null, st.m.P.filter(p => p.st.stage === "talking").sort((a, b) => a.st.due.localeCompare(b.st.due)).map(p => prow(p, esc(p.st.info), when(p.st.due))).join("") || empty("None.")) +
+      card("In conversation", null, st.m.P.filter(p => p.st.stage === "talking").sort((a, b) => (a.st.due || "9").localeCompare(b.st.due || "9")).map(p => prow(p, esc(p.st.info), when(p.st.due))).join("") || empty("None.")) +
       card("Log a reply", null, `<div class="hint">LinkedIn: import your data archive (messages.csv) and everything is exact. Between two archives, or for WhatsApp / SMS / e-mail: open the person → "They replied" and paste their message.</div>`);
   };
 
@@ -245,7 +245,7 @@ const Networking = (() => {
 
   P.thanks = () => {
     const T = todayIso(), all = st.m.P;
-    const th = all.filter(p => p.st.stage === "thanks"), kw = all.filter(p => p.st.stage === "keep_warm").sort((a, b) => a.st.due.localeCompare(b.st.due));
+    const th = all.filter(p => p.st.stage === "thanks"), kw = all.filter(p => p.st.stage === "keep_warm").sort((a, b) => (a.st.due || "9").localeCompare(b.st.due || "9"));
     return `<div class="page-intro">Thank-you the day after the call. Keep warm at least ${Math.round(st.m.S.keepWarmDays / 7)} weeks after the last contact, on any channel.</div>
       <div class="net-grid"><div class="net-col">` +
       card("Thank-you", th.length, th.map(p => msgRow(p, "thanks", esc(p.st.info) + (p.st.due > T ? ` · send ${fmt(p.st.due)}` : ""))).join("") || empty("None.")) +
@@ -528,7 +528,8 @@ const Networking = (() => {
     $("net-fresh").textContent = `Networking · ${li ? "LinkedIn messages up to " + fmtT(li.messages_until) : "data " + fmtT(st.base.generated_at)}`;
     $("net-search").hidden = page !== "network";
     const y = window.scrollY;
-    $("net-body").innerHTML = (P[page] || P.today)();
+    try { $("net-body").innerHTML = (P[page] || P.today)(); }
+    catch (e) { console.error(e); $("net-body").innerHTML = `<div class="empty error">This page hit a bug: ${esc(e.message)}. The other pages still work. Send me a screenshot.</div>`; }
     window.scrollTo(0, y);
     badges();
     document.querySelectorAll(".nav-sub a").forEach(a => a.classList.toggle("active", a.dataset.page === page));

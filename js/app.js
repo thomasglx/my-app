@@ -23,7 +23,7 @@
     catch (e) {
       if (e.status === 401 || e.status === 403) { GH.setToken(null); return showSetup(e.message); }
       if (sec === "offers" && Offers.hasData()) { return toastMsg("Couldn't refresh (connection). Showing the last data."); }
-      $(current() === "networking" ? "net-body" : "list").innerHTML = `<div class="empty error">Couldn't load your offers: ${String(e.message).replace(/</g, "&lt;")}</div>`;
+      $(current() === "networking" ? "net-body" : "list").innerHTML = `<div class="empty error">Couldn't load ${current() === "networking" ? "Networking" : "your offers"}: ${String(e.message).replace(/</g, "&lt;")}</div>`;
     }
   }
 
