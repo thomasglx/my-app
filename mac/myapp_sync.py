@@ -271,6 +271,7 @@ def read_linkedin_mail(m, since, state):
     allbox = next((re.search(r'"([^"]+)"$|(\S+)$', b.decode()).group(1) or "" for b in boxes or [] if b and b"\\All" in b), None)
     typ, _ = imap.select(f'"{allbox}"' if allbox else "INBOX", readonly=True)
     if typ != "OK": raise RuntimeError(f"cannot open the mailbox {allbox}")
+    if not seen: since = datetime.now(timezone.utc) - timedelta(days=30)  # first time: last 30 days
     day = since.strftime("%d-%b-%Y")
     for frm in ("messaging-digest-noreply@linkedin.com", "invitations@linkedin.com"):
         typ, data = imap.uid("search", None, f'(FROM "{frm}" SINCE {day})')
