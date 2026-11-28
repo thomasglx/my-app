@@ -316,8 +316,14 @@ def main():
             log(name, "failed:", e)
 
     seen = set(state.get("seen", []))
+    first_run = not state.get("seen")
     new = [e for e in events if e["id"] not in seen]
-    for e in new:
+    # No notifications for the first run (history), and at most 3 per run, then one summary
+    to_notify = [] if first_run else [e for e in new if e["type"] in ("message_received", "accepted")]
+    if len(to_notify) > 3:
+        notify("MyApp", f"{len(to_notify)} new messages or acceptances from your contacts. Open Today.")
+        to_notify = []
+    for e in to_notify:
         if e["type"] == "message_received":
             ch = {"linkedin": "LinkedIn", "whatsapp": "WhatsApp", "sms": "SMS", "imessage": "iMessage"}.get(e["channel"], e["channel"])
             notify(f"{names.get(e['person'], 'A contact')} wrote on {ch}", e.get("text") or "Open MyApp → Today")
