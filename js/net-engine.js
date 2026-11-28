@@ -100,10 +100,16 @@ const NetEngine = (() => {
     const r = { stage: "to_contact", label: "To contact", due: null, prio: 9, info: "", s,
                 bestChannel: best ? best[0] : (p.channel || "linkedin").toLowerCase(),
                 lastContactAt: s.lastContact ? day(s.lastContact.at) : null };
-    const set = (stage, label, due, prio, info = "") => Object.assign(r, { stage, label, due, prio, info });
+    let set = (stage, label, due, prio, info = "") => Object.assign(r, { stage, label, due, prio, info });
 
     if (PERSONAL.includes(p.relationship)) return set("personal", `${p.relationship[0].toUpperCase() + p.relationship.slice(1)}: not tracked`, null, 98, p.relationship_note || "");
     if (s.closed) return set("closed", "Closed", null, 99, s.closed.reason || "");
+    // basis = the event a draft answers to: a new reply / acceptance / call gives a new draft
+    const B = { reply: () => s.lastRecv && s.lastRecv.id, talking: () => s.lastSent && s.lastSent.id, first: () => (s.acc && s.acc.id) || "conn",
+                dormant: () => "dormant", followup: () => s.out[0] && s.out[0].id, thanks: () => s.callDone && s.callDone.id,
+                keep_warm: () => s.lastContact && s.lastContact.id };
+    const set0 = set;
+    set = (stage, ...rest) => { set0(stage, ...rest); r.basis = B[stage] ? B[stage]() : null; return r; };
     // LinkedIn e-mail notices arrive ~15 min after the message: a reply sent just before the e-mail still counts
     const sentAfter = s.lastSent && (s.lastSent.at > s.lastRecv?.at || (s.lastRecv?.digest && new Date(s.lastSent.at) >= new Date(s.lastRecv.at) - 90 * 6e4));
     const recvOpen = s.lastRecv && !sentAfter && !(s.handled && s.handled.at >= s.lastRecv.at)
@@ -333,6 +339,8 @@ const NetEngine = (() => {
       .filter(Boolean).join("\r\n");
   }
 
-  return { build, funnel, templates, fill, form, unresolved, ics, vcard, levelOf, firmMatch, norm, nameKey,
+  const DRAFT_KIND = { reply: "reply", talking: "reply", first: "first", dormant: "first", followup: "followup", thanks: "thanks", keep_warm: "keep_warm" };
+  const draftKey = p => p.st.basis && DRAFT_KIND[p.st.stage] ? `${p.id}:${DRAFT_KIND[p.st.stage]}:${p.st.basis}` : null;
+  return { DRAFT_KIND, draftKey, build, funnel, templates, fill, form, unresolved, ics, vcard, levelOf, firmMatch, norm, nameKey,
            addDays, diff, day, isoDay, DEFAULTS, PERSONAL, parseSent, syncSent };
 })();

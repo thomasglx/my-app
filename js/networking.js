@@ -6,7 +6,7 @@
    - state/networking_profiles.json    LinkedIn profile text pasted per person */
 const Networking = (() => {
   const DATA = "export/networking.json", OVR = "state/networking_overrides.json",
-        PROMPTS = "state/networking_prompts.json", PROFILES = "state/networking_profiles.json", OFFERS = "export/offers.json", INBOX = "state/networking_inbox_mac.json";
+        PROMPTS = "state/networking_prompts.json", PROFILES = "state/networking_profiles.json", OFFERS = "export/offers.json", INBOX = "state/networking_inbox_mac.json", DRAFTS = "state/networking_drafts.json";
   const PAGES = [["today", "Today"], ["requests", "Connection requests"], ["replies", "Replies"], ["cold", "Cold messages"],
                  ["thanks", "Thank-you & keep warm"], ["calls", "Calls"], ["advice", "Call advice"], ["network", "Network"],
                  ["prompts", "Prompts"], ["stats", "Stats"]];
@@ -30,11 +30,11 @@ const Networking = (() => {
   // ------------------------------------------------------------ data
   async function load() {
     const inj = window.__MYAPP_PREVIEW_NET__;
-    if (inj) { Object.assign(st, { base: inj.base, ov: inj.ov || {}, prompts: inj.prompts, profiles: {}, offers: inj.offers, inbox: inj.inbox || null }); return model(); }
-    const [base, ov, prompts, offers, inbox] = await Promise.all([GH.readJson(DATA), GH.readJson(OVR), GH.readJson(PROMPTS), GH.readJson(OFFERS), GH.readJson(INBOX).catch(() => null)]);
+    if (inj) { Object.assign(st, { base: inj.base, ov: inj.ov || {}, prompts: inj.prompts, profiles: {}, offers: inj.offers, inbox: inj.inbox || null, ai: inj.ai || {} }); return model(); }
+    const [base, ov, prompts, offers, inbox, aid] = await Promise.all([GH.readJson(DATA), GH.readJson(OVR), GH.readJson(PROMPTS), GH.readJson(OFFERS), GH.readJson(INBOX).catch(() => null), GH.readJson(DRAFTS).catch(() => null)]);
     if (!base) throw new Error("export/networking.json not found yet.");
     if ((base.schema_version || 1) < 2) throw new Error("The networking data is in the old format. It needs a re-import (schema 2).");
-    Object.assign(st, { base, ov: ov || {}, prompts: prompts || { prompts: [] }, offers, inbox });
+    Object.assign(st, { base, ov: ov || {}, prompts: prompts || { prompts: [] }, offers, inbox, ai: (aid || {}).drafts || {} });
     model();
   }
   function model() { st.m = NetEngine.build(st.base, st.ov, st.offers, todayIso(), st.inbox); return st.m; }
@@ -74,14 +74,19 @@ const Networking = (() => {
   function draftFor(p, kind, form) {
     const key = p.id + ":" + kind;
     if (st.drafts[key] && st.drafts[key].form === form) return st.drafts[key];
+    // AI draft prepared by the scheduled task for this exact situation (same reply / acceptance / call)
+    const dk = p.st && NetEngine.draftKey(p), ai = dk && dk.split(":")[1] === kind && (st.ai || {})[dk];
+    if (ai && (!form || form === ai.form)) return (st.drafts[key] = { form: ai.form || form, text: ai.text, original: ai.text, ai });
+    form = form || NetEngine.form(p);
     const t = NetEngine.templates(promptOf(KIND[kind]));
     const tpl = t[form] || t.vous || t.tu || Object.values(t)[0] || "";
     const text = NetEngine.fill(tpl, p);
     return (st.drafts[key] = { form, text, original: text });
   }
   function composer(p, kind) {
-    const form = (st.drafts[p.id + ":" + kind] || {}).form || NetEngine.form(p);
-    const d = draftFor(p, kind, form);
+    const prev = st.drafts[p.id + ":" + kind];
+    const d = draftFor(p, kind, prev ? prev.form : null) ;
+    const form = d.form || NetEngine.form(p);
     const miss = NetEngine.unresolved(d.text);
     const ch = kind === "reply" || kind === "keep_warm" ? p.st.bestChannel : "linkedin";
     const lr = p.st.s.lastRecv;
@@ -89,7 +94,7 @@ const Networking = (() => {
       : lr.digest ? `<div class="their"><span>LinkedIn · ${fmtT(lr.at)}</span>LinkedIn's e-mail doesn't include the text. <a href="${esc(lr.thread_url || "https://www.linkedin.com/messaging/")}" target="_blank" rel="noopener">Open the conversation ↗</a></div>` : "";
     return `<div class="composer" data-pid="${esc(p.id)}" data-kind="${kind}">${theirs}
       <div class="comp-top"><div class="seg small">${["tu", "vous", "en"].map(f => `<button class="seg-b ${form === f ? "on" : ""}" data-form="${f}">${f === "en" ? "English" : f}</button>`).join("")}</div>
-        <span class="muted small">Draft from your template · AI drafts come in phase C</span></div>
+        <span class="muted small">${d.ai ? `✨ Claude's draft · ${fmtT(d.ai.at)}${d.ai.why ? ` · <span title="${esc(d.ai.why)}">why?</span>` : ""}` : "Draft from your template · Claude's draft comes at the next run (8:00, 12:00, 16:00, 20:00)"}</span></div>
       <textarea class="comp-text" rows="${Math.min(22, d.text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / 78)), 1))}">${esc(d.text)}</textarea>
       ${miss.length ? `<div class="comp-miss">To fill: ${miss.map(esc).join(" · ")}</div>` : ""}
       <div class="comp-btns">
@@ -419,7 +424,7 @@ const Networking = (() => {
       return toast("Copied. Paste it in LinkedIn, then press Sent ✓", true);
     }
     if (btn.dataset.act === "sent") {
-      const e = ev(pid, "message_sent", { kind: kind === "reply" ? "reply" : kind, channel: btn.dataset.ch || "linkedin", text, ...(d.original && d.original !== text ? { draft: d.original } : {}) });
+      const e = ev(pid, "message_sent", { kind: kind === "reply" ? "reply" : kind, channel: btn.dataset.ch || "linkedin", text, ...(d.original && d.original !== text ? { draft: d.original } : {}), ...(d.ai ? { ai_draft: true } : {}) });
       if (box.dataset.net) {
         const n = st.m.network.find(x => x.key === box.dataset.net);
         newPerson({ id: pid, name: n.name, title: n.headline, firm: "", lang: "FR", alumni: n.school || "", origin: "network", seniority: "", notes: [] }, [e], "first message " + n.name);
