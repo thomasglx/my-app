@@ -75,6 +75,7 @@ const NetEngine = (() => {
         case "closed": s.closed = e; break;
         case "reopened": s.closed = null; break;
         case "copied": s.copied = e; break;
+        case "handled": s.handled = e; break;
         case "not_sent": s.copied = null; break;
       }
     }
@@ -85,8 +86,9 @@ const NetEngine = (() => {
     const set = (stage, label, due, prio, info = "") => Object.assign(r, { stage, label, due, prio, info });
 
     if (s.closed) return set("closed", "Closed", null, 99, s.closed.reason || "");
-    const recvOpen = s.lastRecv && (!s.lastSent || s.lastRecv.at >= s.lastSent.at)
-      && !(s.callDone && s.callDone.at >= s.lastRecv.at) && !(s.callBooked && s.callBooked.at >= s.lastRecv.at);
+    const recvOpen = s.lastRecv && (!s.lastSent || s.lastRecv.at >= s.lastSent.at) && !(s.handled && s.handled.at >= s.lastRecv.at)
+      && !(s.callDone && day(s.callDone.at) >= day(s.lastRecv.at)) && !(s.callBooked && day(s.callBooked.at) >= day(s.lastRecv.at))
+      && diff(s.lastRecv.at, today) <= 30;
     if (recvOpen) return set("reply", "Reply to send", day(s.lastRecv.at), 1, `They wrote ${sd(s.lastRecv.at)}`);
     if (s.callBooked) {
       const at = s.callBooked.call_at || "";
@@ -95,10 +97,15 @@ const NetEngine = (() => {
     }
     if (s.callDone && !s.thanked) return set("thanks", "Thank-you to send", addDays(s.callDone.at, 1), 2, `Call ${sd(s.callDone.at)}`);
     if (s.callDone) return set("keep_warm", "Keep warm", addDays(r.lastContactAt, S.keepWarmDays), 5, `Last contact ${sd(r.lastContactAt)}`);
+    if (s.lastRecv) {
+      const since = s.lastSent && s.lastSent.at > s.lastRecv.at ? s.lastSent.at : s.lastRecv.at;
+      return set("talking", "In conversation", diff(since, today) > 40 ? null : addDays(since, S.followupDays), 6, s.lastSent && s.lastSent.at > s.lastRecv.at ? `You wrote last · ${sd(s.lastSent.at)}` : `Done for now · ${sd(since)}`);
+    }
     const li = s.out.filter(e => (e.channel || "linkedin") === "linkedin").length, mail = s.out.length - li;
     if (li >= 2 || mail > 0) return set("third", "3rd outreach (e-mail, on hold)", null, 50, mail ? "E-mail already sent" : "No reply after the follow-up");
     if (li === 1 && diff(s.out[0].at, today) > S.followupDays + 21) return set("third", "3rd outreach (e-mail, on hold)", null, 50, `No reply since ${sd(s.out[0].at)}`);
     if (li === 1) return set("followup", "Follow-up", addDays(s.out[0].at, S.followupDays), 4, `First message ${sd(s.out[0].at)}`);
+    if (s.acc && diff(s.acc.at, today) > 30) return set("dormant", "Connected, never messaged", null, 45, `Connected ${sd(s.acc.at)}`);
     if (s.acc || (!s.req && p.origin !== "excel") || (!s.req && s.lastContact))
       return set("first", "First message", s.acc ? addDays(s.acc.at, 1) : today, 3, s.acc ? `Accepted ${sd(s.acc.at)}` : "Already connected");
     if (s.req && !s.withdrawn) {
@@ -160,7 +167,8 @@ const NetEngine = (() => {
     const network = (base.network || []).map(n => ({ ...n, key: nameKey(n.name), lvl: levelOf(n.headline), cr: catRank(n.category) }));
     const netCandidates = network.filter(n => n.status === "To message" && n.messaged !== "Yes" && !known.has(n.key) && n.cr < 9)
       .sort((a, b) => a.cr - b.cr || a.lvl - b.lvl);
-    const netDoneToday = P.filter(p => p.origin === "network" && p.evs.some(e => e.type === "message_sent" && day(e.at) === today)).length;
+    const netDoneToday = P.filter(p => p.evs.some(e => e.type === "message_sent" && e.kind === "first" && day(e.at) === today)
+      && (p.origin === "network" || (p.st.s.acc && diff(p.st.s.acc.at, today) > 30))).length;
 
     // Interviews that need a date
     const ivDone = ov.interviews || {};
@@ -184,11 +192,14 @@ const NetEngine = (() => {
       first: by(p => p.st.stage === "first" && due(p.st) && !p.st.paused),
       followups: by(p => p.st.stage === "followup" && due(p.st) && !p.st.paused),
       keepWarm: by(p => p.st.stage === "keep_warm" && due(p.st)),
-      network: netCandidates.slice(0, Math.max(0, S.networkPerDay - netDoneToday)),
+      dormant: by(p => p.st.stage === "dormant", (a, b) => levelOf(a.title) - levelOf(b.title)).slice(0, Math.max(0, S.networkPerDay - netDoneToday)),
+      network: [],
       referred: by(p => p.st.stage === "to_contact" && p.introduced_by),
       firms: firmsToday.slice(0, Math.max(3, Math.ceil(reqLeft / 2))),
-      withdraw: by(p => p.st.stage === "withdraw"),
+      withdraw: by(p => p.st.stage === "withdraw").slice(0, 10),
+      nudges: by(p => p.st.stage === "talking" && due(p.st) && p.st.info.startsWith("You wrote last")),
     };
+    today_.network = netCandidates.slice(0, Math.max(0, S.networkPerDay - netDoneToday - today_.dormant.length));
     const tasks = (base.tasks || []).map(t => ({ ...t, status: (ov.tasks || {})[t.id]?.status || t.status }));
     today_.tasks = tasks.filter(t => t.status === "À faire" && t.due && t.due <= today);
 
