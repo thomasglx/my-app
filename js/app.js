@@ -41,12 +41,32 @@
   $("btn-disconnect").addEventListener("click", () => {
     if (confirm("Remove your access key from this browser?")) { GH.setToken(null); showSetup(); }
   });
-  $("btn-refresh").addEventListener("click", start);
-  $("btn-net-refresh").addEventListener("click", () => Networking.refresh());
+  /* Refresh buttons show what happened: spinning while loading, then "Updated" / "Up to date" / "Failed" + the time. */
+  const hhmm = () => new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  async function doRefresh(btn, sig, fn) {
+    if (btn.classList.contains("busy")) return;
+    const before = sig();
+    btn.className = "btn ghost refresh busy"; btn.innerHTML = `<span class="spin">↻</span> Refreshing…`;
+    let label, cls, msg;
+    try {
+      await Promise.all([fn(), new Promise(r => setTimeout(r, 600))]); // spinner visible at least 0.6 s
+      const changed = sig() !== before;
+      label = changed ? "✓ Updated" : "✓ Up to date"; cls = "ok";
+      msg = changed ? "Refreshed: new data loaded" : "Checked GitHub: nothing new since the last load";
+    } catch (e) {
+      label = "⚠ Failed"; cls = "bad"; msg = "Refresh failed: " + (e.message || "connection problem") + ". The data shown is the last one loaded.";
+      if (e.status === 401 || e.status === 403) { GH.setToken(null); showSetup(e.message); }
+    }
+    btn.className = "btn ghost refresh " + cls; btn.innerHTML = `${label} <span class="rtime">${hhmm()}</span>`;
+    toastMsg(msg, cls === "ok");
+    setTimeout(() => { btn.className = "btn ghost refresh"; btn.innerHTML = `↻ Refresh <span class="rtime">${label.includes("Failed") ? "last try failed" : "checked " + hhmm()}</span>`; }, 3500);
+  }
+  $("btn-refresh").addEventListener("click", e => doRefresh(e.currentTarget, Offers.signature, () => Offers.show()));
+  $("btn-net-refresh").addEventListener("click", e => doRefresh(e.currentTarget, Networking.signature, () => Networking.refresh()));
   window.addEventListener("hashchange", start);
   // Refresh when coming back to the app, at most every 2 minutes
   document.addEventListener("visibilitychange", () => { if (!document.hidden && GH.getToken() && Date.now() - lastOk > 120000) start(); });
-  function toastMsg(m) { const t = $("toast"); t.textContent = m; t.className = "toast bad"; t.hidden = false; setTimeout(() => (t.hidden = true), 5000); }
+  function toastMsg(m, ok) { const t = $("toast"); t.textContent = m; t.className = "toast " + (ok ? "ok" : "bad"); t.hidden = false; clearTimeout(toastMsg.t); toastMsg.t = setTimeout(() => (t.hidden = true), 4000); }
 
   start();
 })();

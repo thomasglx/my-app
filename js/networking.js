@@ -561,5 +561,6 @@ const Networking = (() => {
     render(); window.scrollTo(0, 0);
   }
   async function refresh() { await load(); render(); }
-  return { show, render, load, refresh, PAGES };
+  const signature = () => st.base ? `${st.base.generated_at}|${(st.base.linkedin_import || {}).at}|${st.base.events.length}|${(st.ov.events || []).length}|${JSON.stringify(st.ov).length}` : "";
+  return { show, render, load, refresh, PAGES, signature };
 })();

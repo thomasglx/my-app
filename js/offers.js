@@ -315,5 +315,6 @@ const Offers = (() => {
     render();
   }
 
-  return { show, render, hasData: () => !!state.exp };
+  const signature = () => state.exp ? `${state.exp.generated_at}|${state.exp.offers.length}|${JSON.stringify(state.overrides).length}` : "";
+  return { show, render, hasData: () => !!state.exp, signature };
 })();
