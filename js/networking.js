@@ -162,7 +162,8 @@ const Networking = (() => {
     if (!d) return `<div class="device off">Mac sync not installed yet: replies on WhatsApp, SMS and calls aren't read automatically.</div>`;
     const mins = Math.round((Date.now() - new Date(d.last_run)) / 6e4);
     const ago = mins < 2 ? "just now" : mins < 60 ? `${mins} min ago` : mins < 2880 ? `${Math.round(mins / 60)} h ago` : `${Math.round(mins / 1440)} days ago`;
-    const src = Object.entries(d.sources || {}).filter(([k]) => k !== "contacts").map(([k, v]) => `<span class="${String(v).startsWith("ok") ? "ok" : "bad"}" title="${esc(v)}">${esc({ linkedin: "LinkedIn", sms: "SMS", whatsapp: "WhatsApp", calls: "Calls" }[k] || k)} ${String(v).startsWith("ok") ? "✓" : "⚠"}</span>`).join("");
+    const good = v => /^(ok|no key)/.test(String(v));
+    const src = Object.entries(d.sources || {}).filter(([k]) => k !== "contacts" && !(k === "profiles" && String(d.sources[k]).startsWith("no key"))).map(([k, v]) => `<span class="${good(v) ? "ok" : "bad"}" title="${esc(v)}">${esc({ linkedin: "LinkedIn", sms: "SMS", whatsapp: "WhatsApp", calls: "Calls", profiles: "Profiles" }[k] || k)} ${good(v) ? "✓" : "⚠"}</span>`).join("");
     const stale = mins > 180;
     return `<div class="device ${stale ? "stale" : ""}">${stale ? "⚠ " : ""}Mac synced ${ago}${stale ? " (Mac off or asleep? New replies may be missing)" : ""} · ${src}</div>`;
   }
@@ -580,6 +581,30 @@ const Networking = (() => {
     render(); window.scrollTo(0, 0);
   }
   async function refresh() { await load(); render(); }
+
+  /* "→ MyApp" bookmark: the LinkedIn page you are viewing arrives as #capture=<json {u, n, t}> */
+  async function capture(raw) {
+    let c; try { c = JSON.parse(decodeURIComponent(raw)); } catch { return toast("Couldn't read the page sent by the bookmark"); }
+    if (!st.m) await load();
+    const url = String(c.u || "").split("?")[0].replace(/\/$/, ""), name = String(c.n || "").replace(/^\(\d+\)\s*/, "").split(" | ")[0].trim();
+    const slugOf = u => (String(u).match(/\/in\/([^/?#]+)/) || [])[1]?.toLowerCase();
+    let p = st.m.P.find(x => slugOf(x.linkedin) && slugOf(x.linkedin) === slugOf(url)) || st.m.P.find(x => NetEngine.nameKey(x.name) === NetEngine.nameKey(name));
+    let text = String(c.t || "");
+    const i = name ? text.indexOf(name) : -1; if (i > 0) text = text.slice(i);  // drop LinkedIn's menus above the name
+    text = text.slice(0, 12000);
+    if (!p) {
+      if (!name || !slugOf(url)) return toast("Open a LinkedIn profile page (linkedin.com/in/…) before clicking the bookmark");
+      const id = "li-" + slugOf(url);
+      newPerson({ id, name, title: text.split("\n").map(x => x.trim()).filter(Boolean)[1] || "", firm: "", lang: "FR", seniority: "", origin: "app", linkedin: url, notes: [] }, [], "new contact " + name);
+      p = person(id);
+    } else if (!p.linkedin && slugOf(url)) patchPerson(p.id, { linkedin: url }, "linkedin " + p.name);
+    const entry = { text, at: nowIso(), source: "bookmark" };
+    st.profiles = { ...(st.profiles || {}), [p.id]: entry };
+    save(PROFILES, d => ({ ...d, [p.id]: entry }), "profile " + p.name);
+    history.replaceState(null, "", "#networking/" + (st.page || "today"));
+    render(); openPerson(p.id);
+    toast(`Profile saved for ${p.name}. Claude will use it at the next run.`, true);
+  }
   const signature = () => st.base ? `${(st.inbox && st.inbox.device || {}).last_run}|${st.base.generated_at}|${(st.base.linkedin_import || {}).at}|${st.base.events.length}|${(st.ov.events || []).length}|${JSON.stringify(st.ov).length}` : "";
-  return { show, render, load, refresh, PAGES, signature };
+  return { show, render, load, refresh, PAGES, signature, capture };
 })();

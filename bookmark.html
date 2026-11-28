@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>MyApp · LinkedIn bookmark</title><meta name="robots" content="noindex">
+<style>body{font:16px/1.5 -apple-system,Inter,sans-serif;background:#F6F3EC;color:#263F48;max-width:640px;margin:60px auto;padding:0 24px}
+a.bm{display:inline-block;background:#263F48;color:#F6F3EC;padding:10px 18px;border-radius:10px;text-decoration:none;font-weight:600}
+ol li{margin:8px 0}code{background:#EAE5DB;padding:1px 6px;border-radius:5px}</style></head>
+<body><h1>→ MyApp bookmark</h1>
+<p>On a LinkedIn profile, one click sends the page you are viewing to the person's contact card in MyApp. It only reads the page you have open: nothing runs on LinkedIn by itself.</p>
+<ol>
+<li>Show the bookmarks bar in Safari: <b>View → Show Favorites Bar</b> (Cmd+Shift+B).</li>
+<li><b>Drag this button</b> onto the bar: <a class="bm" id="bm" href="#">→ MyApp</a></li>
+<li>On a LinkedIn profile (<code>linkedin.com/in/…</code>), scroll down once so Experience loads, then click <b>→ MyApp</b>.</li>
+</ol>
+<script>
+const code = "(()=>{const n=document.title.replace(/^\\(\\d+\\)\\s*/,'').split(' | ')[0];let t=document.body.innerText;const i=t.indexOf(n);t=t.slice(i>0?i:0,(i>0?i:0)+15000);window.open('https://thomasglx.github.io/my-app/#capture='+encodeURIComponent(JSON.stringify({u:location.href,n:n,t:t})),'myapp')})()";
+document.getElementById("bm").href = "javascript:" + code;
+</script></body></html>

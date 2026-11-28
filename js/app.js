@@ -12,6 +12,14 @@
     try { await startInner(); } finally { running = false; }
   }
   async function startInner() {
+    if (location.hash.startsWith("#capture=")) {
+      if (!window.__MYAPP_PREVIEW__ && !GH.getToken()) return showSetup("Connect once in this window, then click the bookmark again.");
+      const raw = location.hash.slice(9);
+      history.replaceState(null, "", "#networking/today");
+      Object.keys(SECTIONS).forEach(k => { $(k).hidden = k !== "networking"; }); $("setup").hidden = true;
+      await Networking.show("today");
+      return Networking.capture(raw);
+    }
     const preview = !!window.__MYAPP_PREVIEW__;
     if (!preview && !GH.getToken()) return showSetup();
     const sec = current();

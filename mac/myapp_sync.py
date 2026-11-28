@@ -10,7 +10,7 @@ and writes the matching events to state/networking_inbox_mac.json in the private
 Everything else (friends, other chats) is ignored and never leaves the Mac.
 Secrets live in the macOS Keychain (services "myapp-github" and "myapp-gmail"), never in a file.
 Standard library only. Usage: myapp_sync.py [--dry-run] [--days N]"""
-import base64, email, glob, hashlib, imaplib, json, os, re, socket, sqlite3, subprocess, sys, time, unicodedata, urllib.request
+import base64, email, glob, hashlib, imaplib, json, os, re, socket, sqlite3, subprocess, sys, time, unicodedata, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
@@ -293,6 +293,83 @@ def read_linkedin_mail(m, since, state):
     return cache["events"], cache["unmatched"]
 
 
+# ------------------------------------------------------------------ profiles (People Data Labs, free tier)
+PDL_PER_DAY, PDL_PER_MONTH = 3, 95
+
+
+def pdl_text(d):
+    """PDL person record -> readable profile text for the drafts."""
+    L = [d.get("full_name", "").title(), " · ".join(x for x in (d.get("job_title"), d.get("job_company_name"), d.get("location_name")) if x)]
+    if d.get("summary"): L += ["", "About", d["summary"][:1200]]
+    exp = d.get("experience") or []
+    if exp:
+        L += ["", "Experience"]
+        for e in exp[:12]:
+            t = (e.get("title") or {}).get("name") or ""
+            c = (e.get("company") or {}).get("name") or ""
+            L.append(f"- {t.title()} — {c.title()} ({e.get('start_date') or '?'} – {e.get('end_date') or 'present'})")
+    edu = d.get("education") or []
+    if edu:
+        L += ["", "Education"]
+        for e in edu[:6]:
+            sch = (e.get("school") or {}).get("name") or ""
+            deg = ", ".join((e.get("degrees") or []) + (e.get("majors") or []))
+            L.append(f"- {sch.title()}{' — ' + deg if deg else ''} ({e.get('end_date') or ''})")
+    L += ["", "(Source: People Data Labs database — can be a few months old)"]
+    return "\n".join(L)
+
+
+def enrich_profiles(state):
+    """Once a day: fetch the profile of up to 3 people who recently accepted and have no profile yet."""
+    key = secret("myapp-pdl")
+    if not key: return "no key (optional)"
+    today = datetime.now().strftime("%Y-%m-%d"); month = today[:7]
+    if state.get("pdl_day") == today: return state.get("pdl_status", "ok")
+    used = state.setdefault("pdl_month", {}).get(month, 0)
+    if used >= PDL_PER_MONTH: return f"ok (monthly limit reached: {used})"
+    base = gh("export/networking.json", raw=True) or {}
+    ov = gh("state/networking_overrides.json", raw=True) or {}
+    inbox = gh(OUT, raw=True) or {}
+    cur = gh("state/networking_profiles.json") or {}
+    profiles = json.loads(base64.b64decode(cur["content"]).decode()) if cur.get("content") else {}
+    people = {p["id"]: p for p in base.get("people", [])}
+    people.update({k: {**v, "id": k} for k, v in (ov.get("people_new") or {}).items()})
+    for k, patch in (ov.get("people") or {}).items():
+        if k in people: people[k] = {**people[k], **patch}
+    evs = base.get("events", []) + inbox.get("events", []) + ov.get("events", [])
+    hidden = set(ov.get("deleted_events") or [])
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=21)).strftime("%Y-%m-%d")
+    acc, done = {}, set()
+    for e in evs:
+        if e["id"] in hidden: continue
+        if e["type"] == "accepted" and e["at"][:10] >= cutoff: acc[e["person"]] = max(acc.get(e["person"], ""), e["at"])
+        if e["type"] in ("message_sent", "closed", "skipped"): done.add(e["person"])
+    cands = sorted((at, pid) for pid, at in acc.items() if pid not in done and pid not in profiles and people.get(pid, {}).get("linkedin")
+                   and people[pid].get("relationship") not in ("friend", "classmate", "family", "not relevant"))
+    got = 0
+    for at, pid in reversed(cands):
+        if got >= PDL_PER_DAY or used >= PDL_PER_MONTH: break
+        url = people[pid]["linkedin"]
+        req = urllib.request.Request("https://api.peopledatalabs.com/v5/person/enrich?min_likelihood=6&profile=" + urllib.parse.quote(url))
+        req.add_header("X-Api-Key", key)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                d = json.loads(r.read()).get("data") or {}
+            profiles[pid] = {"text": pdl_text(d), "at": iso(datetime.now(timezone.utc)), "source": "pdl"}
+            got += 1; used += 1
+        except urllib.error.HTTPError as e:
+            if e.code == 404: profiles.setdefault(pid, {"text": "", "at": iso(datetime.now(timezone.utc)), "source": "pdl: not found"})
+            elif e.code in (401, 402, 403, 429): state["pdl_day"] = today; return f"error {e.code}"
+    if got or any(v.get("source") == "pdl: not found" for v in profiles.values()):
+        body = {"message": f"Profiles: {got} from People Data Labs", "content": base64.b64encode(json.dumps(profiles, ensure_ascii=False, indent=1).encode()).decode(),
+                "committer": {"name": "MyApp Mac", "email": "myapp@users.noreply.github.com"}}
+        if cur.get("sha"): body["sha"] = cur["sha"]
+        if not DRY: gh("state/networking_profiles.json", "PUT", body)
+    state["pdl_month"][month] = used; state["pdl_day"] = today
+    state["pdl_status"] = f"ok ({got} today, {used}/{PDL_PER_MONTH} this month)"
+    return state["pdl_status"]
+
+
 def notify(title, text):
     if DRY: log("notify:", title, "|", text); return
     t = lambda s: s.replace("\\", "\\\\").replace('"', '\\"')[:180]
@@ -323,6 +400,10 @@ def main():
             sources[name] = "error: " + str(e)[:160]
             log(name, "failed:", e)
 
+    try:
+        sources["profiles"] = enrich_profiles(state)
+    except Exception as e:
+        sources["profiles"] = "error: " + str(e)[:120]
     seen = set(state.get("seen", []))
     first_run = not state.get("seen")
     new = [e for e in events if e["id"] not in seen]
