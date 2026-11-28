@@ -94,7 +94,7 @@ const Networking = (() => {
       : lr.digest ? `<div class="their"><span>LinkedIn · ${fmtT(lr.at)}</span>LinkedIn's e-mail doesn't include the text. <a href="${esc(lr.thread_url || "https://www.linkedin.com/messaging/")}" target="_blank" rel="noopener">Open the conversation ↗</a></div>` : "";
     return `<div class="composer" data-pid="${esc(p.id)}" data-kind="${kind}">${theirs}
       <div class="comp-top"><div class="seg small">${["tu", "vous", "en"].map(f => `<button class="seg-b ${form === f ? "on" : ""}" data-form="${f}">${f === "en" ? "English" : f}</button>`).join("")}</div>
-        <span class="muted small">${d.ai ? `✨ Claude's draft · ${fmtT(d.ai.at)}${d.ai.why ? ` · <span title="${esc(d.ai.why)}">why?</span>` : ""}` : "Draft from your template · Claude's draft comes at the next run (8:00, 12:00, 16:00, 20:00)"}</span></div>
+        <span class="muted small">${d.ai ? `✨ Claude's draft · ${fmtT(d.ai.at)}${d.ai.why ? ` · <span title="${esc(d.ai.why)}">why?</span>` : ""}` : (kind === "first" && !(st.profiles || {})[p.id] ? "Template only · paste their profile in the contact card to get Claude's draft at the next run" : "Draft from your template · Claude's draft comes at the next run (8:00, 12:00, 16:00, 20:00)")}</span></div>
       <textarea class="comp-text" rows="${Math.min(22, d.text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / 78)), 1))}">${esc(d.text)}</textarea>
       ${miss.length ? `<div class="comp-miss">To fill: ${miss.map(esc).join(" · ")}</div>` : ""}
       <div class="comp-btns">

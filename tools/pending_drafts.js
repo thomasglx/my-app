@@ -23,6 +23,7 @@ for (const p of wanted) {
   if (!key || seen.has(key) || drafts[key]) continue;
   seen.add(key);
   const kind = NetEngine.DRAFT_KIND[p.st.stage];
+  if (kind === "first" && !(profiles[p.id] || {}).text) continue; // his rule: no profile, no first message
   const conv = p.evs.filter(e => ["message_sent", "message_received", "call_done", "call_booked", "note", "contact_logged"].includes(e.type))
     .slice(-14).map(e => ({ at: e.at, type: e.type, channel: e.channel, kind: e.kind, text: (e.text || "").slice(0, 1500), ...(e.digest ? { note: "LinkedIn e-mail notice: text not available" } : {}) }));
   out.push({
