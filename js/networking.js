@@ -94,7 +94,7 @@ const Networking = (() => {
       : lr.digest ? `<div class="their"><span>LinkedIn · ${fmtT(lr.at)}</span>LinkedIn's e-mail doesn't include the text. <a href="${esc(lr.thread_url || "https://www.linkedin.com/messaging/")}" target="_blank" rel="noopener">Open the conversation ↗</a></div>` : "";
     return `<div class="composer" data-pid="${esc(p.id)}" data-kind="${kind}">${theirs}
       <div class="comp-top"><div class="seg small">${["tu", "vous", "en"].map(f => `<button class="seg-b ${form === f ? "on" : ""}" data-form="${f}">${f === "en" ? "English" : f}</button>`).join("")}</div>
-        <span class="muted small">${d.ai ? `✨ Claude's draft · ${fmtT(d.ai.at)}${d.ai.why ? ` · <span title="${esc(d.ai.why)}">why?</span>` : ""}` : (kind === "first" && !(st.profiles || {})[p.id] ? "Template only · paste their profile in the contact card to get Claude's draft at the next run" : "Draft from your template · Claude's draft comes at the next run (8:00, 12:00, 16:00, 20:00)")}</span></div>
+        <span class="muted small">${d.ai ? `✨ Claude's draft · ${fmtT(d.ai.at)}${d.ai.why ? ` · <span title="${esc(d.ai.why)}">why?</span>` : ""}` : (kind === "first" && !(st.profiles || {})[p.id] ? "Template only · open their LinkedIn profile and click → MyApp to get Claude's draft at the next run" : "Draft from your template · Claude's draft comes at the next run (8:00, 12:00, 16:00, 20:00)")}</span></div>
       <textarea class="comp-text" rows="${Math.min(22, d.text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / 78)), 1))}">${esc(d.text)}</textarea>
       ${miss.length ? `<div class="comp-miss">To fill: ${miss.map(esc).join(" · ")}</div>` : ""}
       <div class="comp-btns">
@@ -375,7 +375,7 @@ const Networking = (() => {
         <label class="pf-edit"><span>Seniority</span><select data-field="seniority">${["", "senior", "junior", "student"].map(s => `<option ${p.seniority === s ? "selected" : ""} value="${s}">${s || "–"}</option>`).join("")}</select></label>
         <label class="pf-edit"><span>Relationship</span><select data-field="relationship">${["", "friend", "classmate", "family", "not relevant"].map(s => `<option ${(p.relationship || "") === s ? "selected" : ""} value="${s}">${s || "networking contact"}</option>`).join("")}</select></label>
         <label class="pf-edit"><span>Language</span><select data-field="lang">${["FR", "EN"].map(s => `<option ${String(p.lang).toUpperCase() === s ? "selected" : ""}>${s}</option>`).join("")}</select></label></div>
-      <div class="psec">LinkedIn profile <span class="muted small">(Cmd+A, Cmd+C on their profile, then paste)</span></div>
+      <div class="psec">LinkedIn profile <span class="muted small">(on their LinkedIn profile, click → MyApp in your favorites bar)</span></div>
       <textarea class="ptext" id="profile-text" rows="4" placeholder="Paste the profile here: drafts will use it in phase C.">${esc((st.profiles || {})[p.id]?.text || "")}</textarea>
       <div class="comp-btns"><span class="grow"></span><button class="btn mini" data-pact="profile">Save profile</button></div>
       <div class="psec">History</div><div class="timeline">${tl || empty("Nothing yet.")}</div>
