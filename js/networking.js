@@ -6,12 +6,12 @@
    - state/networking_profiles.json    LinkedIn profile text pasted per person */
 const Networking = (() => {
   const DATA = "export/networking.json", OVR = "state/networking_overrides.json",
-        PROMPTS = "state/networking_prompts.json", PROFILES = "state/networking_profiles.json", OFFERS = "export/offers.json";
+        PROMPTS = "state/networking_prompts.json", PROFILES = "state/networking_profiles.json", OFFERS = "export/offers.json", INBOX = "state/networking_inbox_mac.json";
   const PAGES = [["today", "Today"], ["requests", "Connection requests"], ["replies", "Replies"], ["cold", "Cold messages"],
                  ["thanks", "Thank-you & keep warm"], ["calls", "Calls"], ["advice", "Call advice"], ["network", "Network"],
                  ["prompts", "Prompts"], ["stats", "Stats"]];
   const KIND = { first: "first_message", followup: "followup", reply: "reply", thanks: "thanks", keep_warm: "keep_warm" };
-  const st = { base: null, ov: {}, prompts: null, profiles: null, offers: null, m: null, page: "today", q: "",
+  const st = { base: null, ov: {}, inbox: null, prompts: null, profiles: null, offers: null, m: null, page: "today", q: "",
                open: null, netTab: "people", stageF: "", promptSel: "first_message", drafts: {} };
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -25,19 +25,19 @@ const Networking = (() => {
   const peopleUrl = f => f.linkedin ? f.linkedin.replace(/\/$/, "") + "/people/"
     : "https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(String(f.firm || "").replace(/\b(S\.?A\.?|SAS|SARL|AG)\b\.?/g, "").replace(/\(.*?\)/g, "").trim());
   const profileUrl = p => p.linkedin || searchUrl(p.name + (p.firm ? " " + p.firm : ""));
-  const CH = { linkedin: "LinkedIn", whatsapp: "WhatsApp", sms: "SMS", email: "E-mail", phone: "Phone" };
+  const CH = { linkedin: "LinkedIn", whatsapp: "WhatsApp", sms: "SMS", imessage: "iMessage", email: "E-mail", phone: "Phone" };
 
   // ------------------------------------------------------------ data
   async function load() {
     const inj = window.__MYAPP_PREVIEW_NET__;
-    if (inj) { Object.assign(st, { base: inj.base, ov: inj.ov || {}, prompts: inj.prompts, profiles: {}, offers: inj.offers }); return model(); }
-    const [base, ov, prompts, offers] = await Promise.all([GH.readJson(DATA), GH.readJson(OVR), GH.readJson(PROMPTS), GH.readJson(OFFERS)]);
+    if (inj) { Object.assign(st, { base: inj.base, ov: inj.ov || {}, prompts: inj.prompts, profiles: {}, offers: inj.offers, inbox: inj.inbox || null }); return model(); }
+    const [base, ov, prompts, offers, inbox] = await Promise.all([GH.readJson(DATA), GH.readJson(OVR), GH.readJson(PROMPTS), GH.readJson(OFFERS), GH.readJson(INBOX).catch(() => null)]);
     if (!base) throw new Error("export/networking.json not found yet.");
     if ((base.schema_version || 1) < 2) throw new Error("The networking data is in the old format. It needs a re-import (schema 2).");
-    Object.assign(st, { base, ov: ov || {}, prompts: prompts || { prompts: [] }, offers });
+    Object.assign(st, { base, ov: ov || {}, prompts: prompts || { prompts: [] }, offers, inbox });
     model();
   }
-  function model() { st.m = NetEngine.build(st.base, st.ov, st.offers, todayIso()); return st.m; }
+  function model() { st.m = NetEngine.build(st.base, st.ov, st.offers, todayIso(), st.inbox); return st.m; }
 
   /* Writes are queued so two quick clicks never overwrite each other. */
   let chain = Promise.resolve();
@@ -84,7 +84,9 @@ const Networking = (() => {
     const d = draftFor(p, kind, form);
     const miss = NetEngine.unresolved(d.text);
     const ch = kind === "reply" || kind === "keep_warm" ? p.st.bestChannel : "linkedin";
-    const theirs = kind === "reply" && p.st.s.lastRecv && p.st.s.lastRecv.text ? `<div class="their"><span>${esc(CH[p.st.s.lastRecv.channel] || "")} · ${fmt(p.st.s.lastRecv.at)}</span>${esc(p.st.s.lastRecv.text)}</div>` : "";
+    const lr = p.st.s.lastRecv;
+    const theirs = kind !== "reply" || !lr ? "" : lr.text ? `<div class="their"><span>${esc(CH[lr.channel] || "")} · ${fmtT(lr.at)}</span>${esc(lr.text)}</div>`
+      : lr.digest ? `<div class="their"><span>LinkedIn · ${fmtT(lr.at)}</span>LinkedIn's e-mail doesn't include the text. <a href="${esc(lr.thread_url || "https://www.linkedin.com/messaging/")}" target="_blank" rel="noopener">Open the conversation ↗</a></div>` : "";
     return `<div class="composer" data-pid="${esc(p.id)}" data-kind="${kind}">${theirs}
       <div class="comp-top"><div class="seg small">${["tu", "vous", "en"].map(f => `<button class="seg-b ${form === f ? "on" : ""}" data-form="${f}">${f === "en" ? "English" : f}</button>`).join("")}</div>
         <span class="muted small">Draft from your template · AI drafts come in phase C</span></div>
@@ -150,8 +152,19 @@ const Networking = (() => {
   // ------------------------------------------------------------ pages
   const P = {};
 
+  function deviceBar() {
+    const d = st.m.device;
+    if (!d) return `<div class="device off">Mac sync not installed yet: replies on WhatsApp, SMS and calls aren't read automatically.</div>`;
+    const mins = Math.round((Date.now() - new Date(d.last_run)) / 6e4);
+    const ago = mins < 2 ? "just now" : mins < 60 ? `${mins} min ago` : mins < 2880 ? `${Math.round(mins / 60)} h ago` : `${Math.round(mins / 1440)} days ago`;
+    const src = Object.entries(d.sources || {}).filter(([k]) => k !== "contacts").map(([k, v]) => `<span class="${String(v).startsWith("ok") ? "ok" : "bad"}" title="${esc(v)}">${esc({ linkedin: "LinkedIn", sms: "SMS", whatsapp: "WhatsApp", calls: "Calls" }[k] || k)} ${String(v).startsWith("ok") ? "✓" : "⚠"}</span>`).join("");
+    const stale = mins > 180;
+    return `<div class="device ${stale ? "stale" : ""}">${stale ? "⚠ " : ""}Mac synced ${ago}${stale ? " (Mac off or asleep? New replies may be missing)" : ""} · ${src}</div>`;
+  }
+
   P.today = () => {
     const t = st.m.today, c = st.m.counters, out = [];
+    out.push(deviceBar());
     out.push(counters());
     const now = [];
     t.copies.forEach(p => now.push(prow(p, `You copied a ${esc(p.st.s.copied.kind || "")} message ${fmt(p.st.s.copied.at)}. Did you send it?`,
@@ -562,6 +575,6 @@ const Networking = (() => {
     render(); window.scrollTo(0, 0);
   }
   async function refresh() { await load(); render(); }
-  const signature = () => st.base ? `${st.base.generated_at}|${(st.base.linkedin_import || {}).at}|${st.base.events.length}|${(st.ov.events || []).length}|${JSON.stringify(st.ov).length}` : "";
+  const signature = () => st.base ? `${(st.inbox && st.inbox.device || {}).last_run}|${st.base.generated_at}|${(st.base.linkedin_import || {}).at}|${st.base.events.length}|${(st.ov.events || []).length}|${JSON.stringify(st.ov).length}` : "";
   return { show, render, load, refresh, PAGES, signature };
 })();

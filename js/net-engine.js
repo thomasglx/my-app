@@ -38,14 +38,17 @@ const NetEngine = (() => {
   const isStudent = t => /\b(intern|stagiaire|stage|student|étudiant|etudiant|alternant|apprenti|trainee)\b/i.test(t || "");
 
   /* -------------------------------------------------------------- merge */
-  function merge(base, ov) {
+  function merge(base, ov, inbox) {
     const people = new Map();
     (base.people || []).forEach(p => people.set(p.id, { ...p, origin: p.origin || "excel" }));
     Object.entries(ov.people_new || {}).forEach(([id, p]) => people.set(id, { ...p, id }));
     Object.entries(ov.people || {}).forEach(([id, patch]) => { if (people.has(id)) people.set(id, { ...people.get(id), ...patch }); });
     const hidden = new Set(ov.deleted_events || []);
     const seen = new Set(), events = [];
-    [...(base.events || []), ...(ov.events || [])].forEach(e => { if (!seen.has(e.id) && !hidden.has(e.id)) { seen.add(e.id); events.push(e); } });
+    // Mac sync events: LinkedIn e-mail notices older than the last archive import are already covered by the archive
+    const archUntil = (base.linkedin_import || {}).messages_until || "";
+    const mac = ((inbox || {}).events || []).filter(e => !(e.digest && archUntil && e.at <= archUntil)).map(e => ({ ...e, source: e.source || "mac" }));
+    [...(base.events || []), ...mac, ...(ov.events || [])].forEach(e => { if (!seen.has(e.id) && !hidden.has(e.id)) { seen.add(e.id); events.push(e); } });
     events.sort((a, b) => String(a.at).localeCompare(String(b.at)) || String(a.id).localeCompare(String(b.id)));
     const byPerson = new Map();
     events.forEach(e => { if (!byPerson.has(e.person)) byPerson.set(e.person, []); byPerson.get(e.person).push(e); });
@@ -70,7 +73,13 @@ const NetEngine = (() => {
         case "message_received":
           s.lastRecv = e; s.lastContact = e; s.closed = null;
           s.channels[e.channel || "linkedin"] = (s.channels[e.channel || "linkedin"] || 0) + 1; break;
-        case "contact_logged": s.lastContact = e; break;
+        case "contact_logged":
+          s.lastContact = e;
+          // a real phone call (3+ min) on the day of a booked call = the call happened
+          if (e.channel === "phone" && (e.duration || 0) >= 180 && s.callBooked && day(s.callBooked.call_at || s.callBooked.at) === day(e.at)) {
+            s.callDone = { ...e, type: "call_done", auto: true }; s.callBooked = null; s.thanked = null;
+          }
+          break;
         case "call_booked": s.callBooked = e; break;
         case "call_done": s.callDone = e; s.lastContact = e; s.callBooked = null; s.thanked = null; break;
         case "closed": s.closed = e; break;
@@ -95,7 +104,9 @@ const NetEngine = (() => {
 
     if (PERSONAL.includes(p.relationship)) return set("personal", `${p.relationship[0].toUpperCase() + p.relationship.slice(1)}: not tracked`, null, 98, p.relationship_note || "");
     if (s.closed) return set("closed", "Closed", null, 99, s.closed.reason || "");
-    const recvOpen = s.lastRecv && (!s.lastSent || s.lastRecv.at >= s.lastSent.at) && !(s.handled && s.handled.at >= s.lastRecv.at)
+    // LinkedIn e-mail notices arrive ~15 min after the message: a reply sent just before the e-mail still counts
+    const sentAfter = s.lastSent && (s.lastSent.at > s.lastRecv?.at || (s.lastRecv?.digest && new Date(s.lastSent.at) >= new Date(s.lastRecv.at) - 90 * 6e4));
+    const recvOpen = s.lastRecv && !sentAfter && !(s.handled && s.handled.at >= s.lastRecv.at)
       && !(s.callDone && day(s.callDone.at) >= day(s.lastRecv.at)) && !(s.callBooked && day(s.callBooked.at) >= day(s.lastRecv.at))
       && diff(s.lastRecv.at, today) <= 30;
     if (recvOpen) return set("reply", "Reply to send", day(s.lastRecv.at), 1, `They wrote ${sd(s.lastRecv.at)}`);
@@ -127,9 +138,9 @@ const NetEngine = (() => {
   }
 
   /* -------------------------------------------------------------- everything */
-  function build(base, ov, offersExp, today) {
+  function build(base, ov, offersExp, today, inbox) {
     const S = { ...DEFAULTS, ...(ov.settings || {}) };
-    const { people, events, byPerson } = merge(base, ov);
+    const { people, events, byPerson } = merge(base, ov, inbox);
     const P = [];
     people.forEach(p => { const st = derive(p, byPerson.get(p.id) || [], today, S); P.push({ ...p, st, evs: byPerson.get(p.id) || [] }); });
 
@@ -143,7 +154,7 @@ const NetEngine = (() => {
     });
 
     // Counters
-    const sentToday = events.filter(e => e.type === "message_sent" && day(e.at) === today && (e.channel || "linkedin") === "linkedin").length;
+    const sentToday = events.filter(e => e.type === "message_sent" && !e.approx && day(e.at) === today && (e.channel || "linkedin") === "linkedin").length;
     const reqToday = events.filter(e => e.type === "request_sent" && day(e.at) === today).length;
     const req7d = events.filter(e => e.type === "request_sent" && diff(e.at, today) < 7 && diff(e.at, today) >= 0).length;
     const reqLeft = Math.max(0, Math.min(S.requestsDayMax - reqToday, S.requests7dMax - req7d));
@@ -212,7 +223,8 @@ const NetEngine = (() => {
     const tasks = (base.tasks || []).map(t => ({ ...t, status: (ov.tasks || {})[t.id]?.status || t.status }));
     today_.tasks = tasks.filter(t => t.status === "À faire" && t.due && t.due <= today);
 
-    return { S, P, events, people, firms, firmsToday, network, netCandidates, interviews, tasks, today: today_,
+    const device = inbox && inbox.device ? { ...inbox.device, unmatched: inbox.unmatched || [] } : null;
+    return { S, P, events, people, firms, firmsToday, device, network, netCandidates, interviews, tasks, today: today_,
              counters: { sentToday, reqToday, req7d, reqLeft, msgLeft, netDoneToday } };
   }
 
