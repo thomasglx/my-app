@@ -266,7 +266,11 @@ def read_linkedin_mail(m, since, state):
     seen = set(cache["uids"])
     imap = imaplib.IMAP4_SSL("imap.gmail.com")
     imap.login(user, pw)
-    imap.select('"[Gmail]/All Mail"', readonly=True)
+    # "All Mail" has a different name in each language ("Tous les messages"…): find it by its \\All flag
+    typ, boxes = imap.list()
+    allbox = next((re.search(r'"([^"]+)"$|(\S+)$', b.decode()).group(1) or "" for b in boxes or [] if b and b"\\All" in b), None)
+    typ, _ = imap.select(f'"{allbox}"' if allbox else "INBOX", readonly=True)
+    if typ != "OK": raise RuntimeError(f"cannot open the mailbox {allbox}")
     day = since.strftime("%d-%b-%Y")
     for frm in ("messaging-digest-noreply@linkedin.com", "invitations@linkedin.com"):
         typ, data = imap.uid("search", None, f'(FROM "{frm}" SINCE {day})')
