@@ -339,8 +339,36 @@ const NetEngine = (() => {
       .filter(Boolean).join("\r\n");
   }
 
+  /* LinkedIn page text (bookmark) → profile only: header, About, Experience, Education, certifications, skills, languages.
+     Drops menus, buttons, the Activity feed (reposts) and the right-hand column ("More profiles for you"…). */
+  function cleanProfile(text, name) {
+    let t = String(text || "").replace(/\r/g, "");
+    if (name) { const i = t.indexOf(name); if (i > 0) t = t.slice(i); }
+    const stop = /^(Interests|More profiles for you|People you may know|People also viewed|Explore Premium profiles|You might like|Pages for you)$/;
+    const skipSec = /^(Highlights|Activity|Analytics|Resources)$/;
+    const main = /^(About|Featured|Experience|Education|Licenses & certifications|Skills|Languages|Volunteering|Projects|Honors & awards|Courses|Publications|Recommendations|Test scores|Organizations)( \(\d+\))?$/;
+    const junk = /^(More|Message|Connect|Follow|Following|Endorse|Endorsed|Show translation|See translation|Contact info|·|Show all.*|Show more.*|\d[\d,]*|…\s*more|Save to PDF|Present|Pending)$/;
+    const out = []; let skip = false;
+    for (const raw of t.split("\n")) {
+      const l = raw.trim();
+      if (stop.test(l)) break;
+      if (skipSec.test(l)) { skip = true; continue; }
+      if (main.test(l)) { skip = false; out.push("", l.replace(/ \(\d+\)$/, "").toUpperCase()); continue; }
+      if (skip || junk.test(l)) continue;
+      if (!l) { if (out.length && out[out.length - 1] !== "") out.push(""); continue; }
+      if (out[out.length - 1] === l) continue;  // LinkedIn repeats lines (name, headline)
+      out.push(l);
+    }
+    const again = name ? out.indexOf(name, 1) : -1;  // the header block appears twice: keep the fuller second copy
+    if (again > 0 && again < 6) out.splice(0, again);
+    const res = out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    // current role = first entry under EXPERIENCE: "Title" then "Firm · Contract type"
+    const ex = out.indexOf("EXPERIENCE"), e = ex >= 0 ? out.slice(ex + 1).filter(Boolean) : [];
+    return { text: res, title: e[0] || "", firm: (e[1] || "").split(" · ")[0].trim() };
+  }
+
   const DRAFT_KIND = { reply: "reply", talking: "reply", first: "first", dormant: "first", followup: "followup", thanks: "thanks", keep_warm: "keep_warm" };
   const draftKey = p => p.st.basis && DRAFT_KIND[p.st.stage] ? `${p.id}:${DRAFT_KIND[p.st.stage]}:${p.st.basis}` : null;
   return { DRAFT_KIND, draftKey, build, funnel, templates, fill, form, unresolved, ics, vcard, levelOf, firmMatch, norm, nameKey,
-           addDays, diff, day, isoDay, DEFAULTS, PERSONAL, parseSent, syncSent };
+           addDays, diff, day, isoDay, DEFAULTS, PERSONAL, parseSent, syncSent, cleanProfile };
 })();

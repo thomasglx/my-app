@@ -589,15 +589,19 @@ const Networking = (() => {
     const url = String(c.u || "").split("?")[0].replace(/\/$/, ""), name = String(c.n || "").replace(/^\(\d+\)\s*/, "").split(" | ")[0].trim();
     const slugOf = u => (String(u).match(/\/in\/([^/?#]+)/) || [])[1]?.toLowerCase();
     let p = st.m.P.find(x => slugOf(x.linkedin) && slugOf(x.linkedin) === slugOf(url)) || st.m.P.find(x => NetEngine.nameKey(x.name) === NetEngine.nameKey(name));
-    let text = String(c.t || "");
-    const i = name ? text.indexOf(name) : -1; if (i > 0) text = text.slice(i);  // drop LinkedIn's menus above the name
-    text = text.slice(0, 12000);
+    const cp = NetEngine.cleanProfile(c.t, name), text = cp.text.slice(0, 12000);
     if (!p) {
       if (!name || !slugOf(url)) return toast("Open a LinkedIn profile page (linkedin.com/in/…) before clicking the bookmark");
       const id = "li-" + slugOf(url);
-      newPerson({ id, name, title: text.split("\n").map(x => x.trim()).filter(Boolean)[1] || "", firm: "", lang: "FR", seniority: "", origin: "app", linkedin: url, notes: [] }, [], "new contact " + name);
+      newPerson({ id, name, title: cp.title || text.split("\n").filter(Boolean)[1] || "", firm: cp.firm, lang: "FR", seniority: "", origin: "app", linkedin: url, notes: [] }, [], "new contact " + name);
       p = person(id);
-    } else if (!p.linkedin && slugOf(url)) patchPerson(p.id, { linkedin: url }, "linkedin " + p.name);
+    } else {
+      const fix = {};
+      if (!p.linkedin && slugOf(url)) fix.linkedin = url;
+      if (!p.title && cp.title) fix.title = cp.title;
+      if (!p.firm && cp.firm) fix.firm = cp.firm;
+      if (Object.keys(fix).length) patchPerson(p.id, fix, "profile fields " + p.name);
+    }
     const entry = { text, at: nowIso(), source: "bookmark" };
     st.profiles = { ...(st.profiles || {}), [p.id]: entry };
     save(PROFILES, d => ({ ...d, [p.id]: entry }), "profile " + p.name);
