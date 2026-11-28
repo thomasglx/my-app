@@ -177,7 +177,7 @@ def read_messages(m, since):
         pid = m.find(phone=handle) if "@" not in handle else None
         text = text or decode_attributed(ab)
         if not pid:
-            if not mine: unmatched.append({"channel": "sms", "who": handle[-4:], "at": iso(apple_time(date))})
+            if not mine: unmatched.append({"channel": "sms", "at": iso(apple_time(date))})  # no name, no number: private
             continue
         ch = "imessage" if (service or "").lower() == "imessage" else "sms"
         evs.append({"id": eid("msg", rowid), "person": pid, "type": "message_sent" if mine else "message_received",
@@ -196,7 +196,7 @@ def read_whatsapp(m, since):
         if stype not in (0, None) or "@g.us" in (jid or ""): continue  # groups ignored
         pid = m.find(phone=(jid or "").split("@")[0]) or m.find(name=partner)
         if not pid:
-            if not mine: unmatched.append({"channel": "whatsapp", "who": (partner or "")[:20], "at": iso(apple_time(date))})
+            if not mine: unmatched.append({"channel": "whatsapp", "at": iso(apple_time(date))})  # no name: private
             continue
         evs.append({"id": eid("wa", pk), "person": pid, "type": "message_sent" if mine else "message_received",
                     "at": iso(apple_time(date)), "channel": "whatsapp", "text": text or "[media]", **({"kind": "reply"} if mine else {})})
@@ -225,6 +225,7 @@ def mail_text(msg):
         ct = part.get_content_type()
         if ct in ("text/plain", "text/html"):
             t = part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", "ignore")
+            t = t.replace("\r\n", "\n")
             if ct == "text/plain": plain += t
             else: html += t
     return plain, html
@@ -262,7 +263,9 @@ def read_linkedin_mail(m, since, state):
     pw = secret("myapp-gmail")
     user = os.environ.get("MYAPP_GMAIL_USER") or secret("myapp-gmail-user")
     if not pw or not user: raise RuntimeError("Gmail address or app password missing in the Keychain")
-    cache = state.setdefault("mail", {"uids": [], "events": [], "unmatched": []})
+    cache = state.get("mail") or {}
+    if cache.get("v") != 2: cache = {"v": 2, "uids": [], "events": [], "unmatched": []}  # parser changed: read again
+    state["mail"] = cache
     seen = set(cache["uids"])
     imap = imaplib.IMAP4_SSL("imap.gmail.com")
     imap.login(user, pw)
@@ -349,7 +352,9 @@ def main():
         merged = {e["id"]: e for e in old.get("events", []) if e["at"] >= keep_after}
         merged.update({e["id"]: e for e in events})
         doc = {"device": {"name": socket.gethostname(), "last_run": iso(now), "version": VERSION, "sources": sources},
-               "events": sorted(merged.values(), key=lambda e: e["at"]), "unmatched": unmatched[-50:]}
+               "events": sorted(merged.values(), key=lambda e: e["at"]),
+               "unmatched": [u for u in unmatched if u["channel"].startswith("linkedin")][-50:],
+               "unmatched_private": {c: sum(1 for u in unmatched if u["channel"] == c) for c in ("sms", "whatsapp")}}
         body = {"message": f"Mac sync: {len(new)} new" if new else "Mac sync: heartbeat",
                 "content": base64.b64encode(json.dumps(doc, ensure_ascii=False, indent=1).encode()).decode(),
                 "committer": {"name": "MyApp Mac", "email": "myapp@users.noreply.github.com"}}
