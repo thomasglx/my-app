@@ -19,7 +19,8 @@ const Networking = (() => {
   const todayIso = () => preview() ? window.__MYAPP_PREVIEW_NET__.today : NetEngine.isoDay(new Date());
   const nowIso = () => preview() ? window.__MYAPP_PREVIEW_NET__.today + "T" + new Date().toTimeString().slice(0, 5) : new Date().toISOString();
   const fmt = iso => { if (!iso) return ""; const x = new Date(String(iso).length > 10 ? iso : iso + "T12:00"); return isNaN(x) ? iso : x.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
-  const fmtT = iso => { const x = new Date(iso); return isNaN(x) ? "" : x.toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
+  const fmtT = iso => { if (/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ""))) return new Date(iso + "T12:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) + " (time not set)";
+    const x = new Date(iso); return isNaN(x) ? "" : x.toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
   const uid = () => "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const searchUrl = name => "https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(name);
   const peopleUrl = f => f.linkedin ? f.linkedin.replace(/\/$/, "") + "/people/"
@@ -589,6 +590,36 @@ const Networking = (() => {
                 calls: st.m.P.filter(p => p.st.stage === "call" || p.st.stage === "call_log").length };
     Object.entries(n).forEach(([k, v]) => { const el = $("nb-" + k); if (el) el.textContent = v || ""; });
   }
+  /* Profile capture queue: who still needs a LinkedIn profile, most urgent first (Claude drafts nothing without one).
+     You open each profile yourself (a normal human visit) and click → MyApp; no automation on LinkedIn. */
+  const CAPTURE_STAGES = ["reply", "talking", "thanks", "call", "call_log", "first", "dormant", "followup", "keep_warm", "third"];
+  function captureQueue() {
+    const t = st.m.today, prof = st.profiles || {}, skip = st.capSkip || (st.capSkip = new Set());
+    const first = [...t.replies, ...t.nudges, ...t.first, ...t.dormant, ...t.followups, ...t.keepWarm, ...st.m.P.filter(p => p.st.stage === "thanks")];
+    const rest = st.m.P.filter(p => CAPTURE_STAGES.includes(p.st.stage)).sort((a, b) => CAPTURE_STAGES.indexOf(a.st.stage) - CAPTURE_STAGES.indexOf(b.st.stage));
+    const seen = new Set(), q = [];
+    for (const p of [...first, ...rest]) if (!seen.has(p.id) && (seen.add(p.id), !prof[p.id]?.text && !skip.has(p.id))) q.push(p);
+    return { q, urgent: q.filter(p => first.includes(p)).length };
+  }
+  function captureBar() {
+    if (st.profiles === null) return "";
+    const { q, urgent } = captureQueue();
+    if (!q.length) return st.capOn ? `<div class="capbar done">✓ Every active contact has a profile. <button class="btn mini ghost" data-cap="stop">Close</button></div>` : "";
+    const n = q[0], done = st.capDone || 0;
+    if (!st.capOn) return `<div class="capbar"><div><b>${urgent || q.length} profile${(urgent || q.length) > 1 ? "s" : ""} missing</b>${urgent ? " for today's messages" : ""} (${q.length} active contacts in total). Claude can't draft first messages without them.</div>
+      <button class="btn mini primary" data-cap="start">Start capturing</button></div>`;
+    return `<div class="capbar on"><div>${done ? `✓ ${done} saved · ` : ""}<b>Next: ${esc(n.name)}</b>${n.firm ? ` · ${esc(n.firm)}` : ""} <span class="muted small">(${q.length} left${n.linkedin ? "" : " · no URL: pick the right person in the search"})</span><div class="muted small">Opens in your LinkedIn tab → click <b>→ MyApp</b> → you come back here.</div></div>
+      <div class="capbtns"><button class="btn mini ghost" data-cap="skip" data-pid="${esc(n.id)}">Skip</button><button class="btn mini ghost" data-cap="stop">Stop</button><button class="btn mini primary" data-cap="open" data-url="${esc(profileUrl(n))}">Open on LinkedIn ↗</button></div></div>`;
+  }
+  function onCapture(b) {
+    const a = b.dataset.cap;
+    if (a === "start") st.capOn = true;
+    if (a === "stop") st.capOn = false;
+    if (a === "skip") st.capSkip.add(b.dataset.pid);
+    if (a === "open") window.open(b.dataset.url, "li");  // same LinkedIn tab every time
+    render();
+  }
+
   function render() {
     if (!st.m) return;
     const page = st.page, label = (PAGES.find(p => p[0] === page) || PAGES[0])[1];
@@ -597,7 +628,7 @@ const Networking = (() => {
     $("net-fresh").textContent = `Networking · ${li ? "LinkedIn messages up to " + fmtT(li.messages_until) : "data " + fmtT(st.base.generated_at)}`;
     $("net-search").hidden = page !== "network";
     const y = window.scrollY;
-    try { $("net-body").innerHTML = (P[page] || P.today)(); }
+    try { $("net-body").innerHTML = (page === "today" || st.capOn ? captureBar() : "") + (P[page] || P.today)(); }
     catch (e) { console.error(e); $("net-body").innerHTML = `<div class="empty error">This page hit a bug: ${esc(e.message)}. The other pages still work. Send me a screenshot.</div>`; }
     window.scrollTo(0, y);
     badges();
@@ -612,6 +643,7 @@ const Networking = (() => {
     $("net-body").addEventListener("click", onClick);
     $("net-body").addEventListener("change", onChange);
     $("net-body").addEventListener("submit", onSubmit);
+    $("net-body").addEventListener("click", e => { const b = e.target.closest("[data-cap]"); if (b) { e.stopPropagation(); onCapture(b); } }, true);
     $("net-body").addEventListener("input", e => { const ta = e.target.closest(".comp-text"); if (ta) { const box = ta.closest(".composer"), k = box.dataset.pid + ":" + box.dataset.kind; st.drafts[k] = { ...(st.drafts[k] || {}), text: ta.value }; } });
     $("person-wrap").addEventListener("click", e => {
       if (e.target.id === "person-wrap" || e.target.closest("[data-close]")) { $("person-wrap").hidden = true; return; }
@@ -660,6 +692,7 @@ const Networking = (() => {
     st.profiles = { ...(st.profiles || {}), [p.id]: entry };
     save(PROFILES, d => ({ ...d, [p.id]: entry }), "profile " + p.name);
     history.replaceState(null, "", "#networking/" + (st.page || "today"));
+    if (st.capOn) st.capDone = (st.capDone || 0) + 1;
     render(); openPerson(p.id);
     toast(`Profile saved for ${p.name}. Claude will use it at the next run.`, true);
   }

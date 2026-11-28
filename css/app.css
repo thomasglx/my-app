@@ -481,3 +481,7 @@ tr.click:hover td { background: rgba(82,109,117,.06); }
 .pdetails summary { font-weight: 600; color: var(--ocean); }
 .pb-h { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .pb-date { flex-shrink: 0; text-align: right; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.capbar { display: flex; justify-content: space-between; align-items: center; gap: 14px; background: var(--s-action-bg); border: 1px solid var(--gold); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 16px; font-size: 14px; }
+.capbar.on { position: sticky; top: 8px; z-index: 5; box-shadow: var(--shadow); }
+.capbar.done { background: var(--s-applied-bg); border-color: var(--s-applied); }
+.capbtns { display: flex; gap: 6px; flex-shrink: 0; }

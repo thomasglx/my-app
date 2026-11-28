@@ -12,6 +12,7 @@
     try { await startInner(); } finally { running = false; }
   }
   async function startInner() {
+    window.name = "myapp";  // the → MyApp bookmark reuses this tab instead of opening a new one
     if (location.hash.startsWith("#capture=")) {
       if (!window.__MYAPP_PREVIEW__ && !GH.getToken()) return showSetup("Connect once in this window, then click the bookmark again.");
       const raw = location.hash.slice(9);
