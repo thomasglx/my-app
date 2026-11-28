@@ -107,8 +107,18 @@ const Networking = (() => {
   const pname = p => `<a class="pname" data-person="${esc(p.id)}">${esc(p.name)}</a>`;
   const prow = (p, sub, side = "", key = "") => `<div class="row ${st.open === key ? "is-open" : ""}"><div class="row-main"><div class="row-title">${pname(p)} <span class="muted">· ${esc(p.firm || p.title)}</span></div>${sub ? `<div class="row-sub">${sub}</div>` : ""}</div><div class="row-side">${side}</div></div>`;
   const writeBtn = (p, kind, label = "Write") => { const k = p.id + ":" + kind; return `<button class="btn mini ${st.open === k ? "" : "primary"}" data-open="${esc(k)}">${st.open === k ? "Close" : label}</button>`; };
-  const skipBtn = p => `<button class="btn mini ghost" data-act="skip" data-pid="${esc(p.id)}" title="No message needed">Skip</button>`;
-  const msgRow = (p, kind, sub) => { const k = p.id + ":" + kind; return prow(p, sub, when(p.st.due) + (kind === "first" ? skipBtn(p) : "") + writeBtn(p, kind), k) + (st.open === k ? composer(p, kind) : ""); };
+  const REASONS = [["friend", "Friend"], ["classmate", "Classmate"], ["family", "Family"], ["elsewhere", "Handled elsewhere (call, WhatsApp…)"],
+                   ["finished", "Conversation finished"], ["not relevant", "Not relevant for my search"]];
+  const needBtn = (p, task) => { const k = p.id + ":" + task + ":skip"; return `<button class="btn mini ghost" data-open="${esc(k)}">${st.open === k ? "Close" : "No need"}</button>`; };
+  const needForm = (p, task) => `<form class="noneed" data-pid="${esc(p.id)}" data-skiptask="${task}">
+      <div class="noneed-q">Why no ${task === "reply" || task === "talking" ? "reply" : "message"} to ${esc(p.name)}?</div>
+      <div class="chips">${REASONS.map(([v, l]) => `<label class="chip"><input type="radio" name="reason" value="${esc(v)}"><span>${esc(l)}</span></label>`).join("")}</div>
+      <textarea name="text" rows="2" placeholder="Details (optional): saved in the contact card"></textarea>
+      <div class="comp-btns"><span class="muted small">Friend, classmate, family and "not relevant" stop all reminders for this person.</span><span class="grow"></span><button class="btn mini primary">Save</button></div></form>`;
+  const msgRow = (p, kind, sub, task = kind) => {
+    const k = p.id + ":" + kind, ks = p.id + ":" + task + ":skip";
+    return prow(p, sub, when(p.st.due) + needBtn(p, task) + writeBtn(p, kind), st.open === ks ? ks : k) + (st.open === k ? composer(p, kind) : "") + (st.open === ks ? needForm(p, task) : "");
+  };
   const kpi = (label, val, sub = "", cls = "") => `<div class="kpi ${cls}"><div class="kpi-label">${label}</div><div class="kpi-val">${val}</div>${sub ? `<div class="kpi-sub">${sub}</div>` : ""}</div>`;
   const gauge = (n, max) => { const pct = Math.min(100, Math.round(100 * n / max)); return `<div class="gauge"><i style="width:${pct}%" class="${pct >= 90 ? "hot" : ""}"></i></div>`; };
   function counters() {
@@ -160,14 +170,13 @@ const Networking = (() => {
 
     const msgs = [...t.first.map(p => msgRow(p, "first", esc(p.st.info))), ...t.followups.map(p => msgRow(p, "followup", esc(p.st.info))),
                   ...t.keepWarm.map(p => msgRow(p, "keep_warm", `Keep warm · ${esc(p.st.info)}`)),
-                  ...t.nudges.map(p => msgRow(p, "reply", `No answer since your last message · ${esc(p.st.info)}`))];
-    const dorm = t.dormant.map(p => msgRow(p, "first", `${esc(p.st.info)} · never messaged`));
-    const net = t.network.map(n => { const k = "net:" + n.key; return `<div class="row ${st.open === k ? "is-open" : ""}"><div class="row-main"><div class="row-title">${esc(n.name)} <span class="muted">· old connection</span></div><div class="row-sub">${esc(n.headline.slice(0, 110))}</div></div>
-      <div class="row-side"><button class="btn mini primary" data-open="${esc(k)}">${st.open === k ? "Close" : "Write"}</button></div></div>${st.open === k ? netComposer(n) : ""}`; });
+                  ...t.nudges.map(p => msgRow(p, "reply", `No answer since your last message · ${esc(p.st.info)}`, "talking"))];
+    const dorm = t.dormant.map(p => msgRow(p, "first", `${esc(p.st.info)} · never messaged`, "dormant"));
+    const net = t.network.map(netRow);
     out.push(card(`Messages to send <span class="muted small">· ${c.msgLeft} left today</span>`, msgs.length + dorm.length + net.length,
       (msgs.join("") || "") + (dorm.length + net.length ? `<div class="sub-head">Old connections (${st.m.S.networkPerDay} a day, best roles first)</div>` + dorm.join("") + net.join("") : "") || empty("No message due today.")));
 
-    const reqs = [...t.referred.map(p => prow(p, `Referred by ${esc(p.introduced_by)} · priority`, `<a class="btn mini ghost" href="${esc(profileUrl(p))}" target="_blank" rel="noopener">Profile ↗</a><button class="btn mini primary" data-act="req-sent" data-pid="${esc(p.id)}">Request sent ✓</button>`))];
+    const reqs = [...t.referred.map(p => prow(p, `Referred by ${esc(p.introduced_by)} · priority`, `${needBtn(p, "referred")}<a class="btn mini ghost" href="${esc(profileUrl(p))}" target="_blank" rel="noopener">Profile ↗</a><button class="btn mini primary" data-act="req-sent" data-pid="${esc(p.id)}">Request sent ✓</button>`) + (st.open === p.id + ":referred:skip" ? needForm(p, "referred") : ""))];
     out.push(card(`Connection requests <span class="muted small">· ${c.reqLeft} left today</span>`, null,
       (reqs.length ? `<div class="sub-head">Referred in calls</div>` + reqs.join("") : "") +
       (c.reqLeft ? `<div class="sub-head">Firms for today</div>` + t.firms.map(firmBlock).join("") : empty(`Limit reached (${c.req7d}/${st.m.S.requests7dMax} over 7 days). Requests come back tomorrow.`))));
@@ -178,6 +187,13 @@ const Networking = (() => {
     return out.join("");
   };
 
+  function netRow(n) {
+    const k = "net:" + n.key, fake = netPerson(n), ks = fake.id + ":dormant:skip";
+    return `<div class="row ${st.open === k || st.open === ks ? "is-open" : ""}"><div class="row-main"><div class="row-title">${esc(n.name)} <span class="muted">· old connection</span></div><div class="row-sub">${esc(n.headline.slice(0, 110))}</div></div>
+      <div class="row-side"><button class="btn mini ghost" data-open="${esc(ks)}">${st.open === ks ? "Close" : "No need"}</button><button class="btn mini primary" data-open="${esc(k)}">${st.open === k ? "Close" : "Write"}</button></div></div>
+      ${st.open === k ? netComposer(n) : ""}${st.open === ks ? needForm(fake, "dormant").replace('class="noneed"', `class="noneed" data-net="${esc(n.key)}"`) : ""}`;
+  }
+  const netPerson = n => ({ id: "net-" + n.key.replace(/\s+/g, "-"), name: n.name, title: n.headline, firm: "", alumni: n.school || "", lang: "FR", seniority: "", origin: "network", notes: [] });
   function netComposer(n) {
     const fake = { id: "net-" + n.key.replace(/\s+/g, "-"), name: n.name, title: n.headline, firm: "", alumni: n.school, lang: "FR", seniority: "", st: { s: {}, bestChannel: "linkedin" } };
     return composer(fake, "first").replace('data-kind="first"', `data-kind="first" data-net="${esc(n.key)}"`);
@@ -218,7 +234,7 @@ const Networking = (() => {
         fu.filter(p => !p.st.paused && p.st.due <= T).map(p => msgRow(p, "followup", esc(p.st.info))).join("") || empty("None due.")) +
       (paused.length ? card("Paused: a colleague already answered", paused.length, paused.map(p => prow(p, esc(p.st.paused))).join("")) : "") +
       `</div><div class="net-col">` +
-      card("Old connections today", t.network.length, t.network.map(n => { const k = "net:" + n.key; return `<div class="row"><div class="row-main"><div class="row-title">${esc(n.name)}</div><div class="row-sub">${esc(n.headline.slice(0, 100))}</div></div><div class="row-side"><button class="btn mini primary" data-open="${esc(k)}">${st.open === k ? "Close" : "Write"}</button></div></div>${st.open === k ? netComposer(n) : ""}`; }).join("") || empty("Done for today.")) +
+      card("Old connections today", t.network.length, t.network.map(netRow).join("") || empty("Done for today.")) +
       card("Waiting for the follow-up date", fu.filter(p => p.st.due > T).length, fu.filter(p => p.st.due > T).slice(0, 30).map(p => prow(p, esc(p.st.info), when(p.st.due))).join("")) +
       card("Connected, never messaged", all.filter(p => p.st.stage === "dormant").length, all.filter(p => p.st.stage === "dormant").sort((a, b) => NetEngine.levelOf(a.title) - NetEngine.levelOf(b.title)).slice(0, 40).map(p => msgRow(p, "first", esc(p.st.info))).join("") || empty("None.")) +
       card("3rd outreach (e-mail, on hold)", third.length, third.map(p => prow(p, esc(p.st.info) + (p.email ? " · " + esc(p.email) : ""))).join("") || empty("None.")) +
@@ -322,7 +338,7 @@ const Networking = (() => {
     const T = todayIso();
     const field = (k, label, ph = "") => `<label class="pf-edit"><span>${label}</span><input data-field="${k}" value="${esc(p[k] || "")}" placeholder="${esc(ph)}"></label>`;
     const LBL = { request_sent: "Request sent", accepted: "Accepted", message_sent: "Message sent", message_received: "Message received", call_booked: "Call booked", call_done: "Call done",
-                  contact_logged: "Contact", closed: "Closed", reopened: "Reopened", withdrawn: "Request withdrawn", copied: "Copied", not_sent: "Not sent", note: "Note", handled: "No reply needed" };
+                  contact_logged: "Contact", closed: "Closed", reopened: "Reopened", withdrawn: "Request withdrawn", copied: "Copied", not_sent: "Not sent", note: "Note", handled: "No reply needed", skipped: "No need" };
     const tl = p.evs.slice().reverse().map(e => `<div class="tl ${e.type}"><div class="tl-d">${e.approx ? "~" : ""}${fmt(e.at)}</div><div class="tl-b"><b>${LBL[e.type] || e.type}</b>${e.kind ? ` · ${esc(e.kind.replace("_", " "))}` : ""}${e.channel ? ` · ${esc(CH[e.channel] || e.channel)}` : ""}${e.call_at ? ` · ${fmtT(e.call_at)}` : ""}${e.reason ? ` · ${esc(e.reason)}` : ""}
       ${e.text ? `<div class="tl-t">${esc(e.text)}</div>` : ""}</div>${e.source === "app" ? `<button class="tl-x" title="Undo" data-undo="${esc(e.id)}">×</button>` : ""}</div>`).join("");
     $("person").innerHTML = `<button class="pclose" data-close>×</button>
@@ -336,6 +352,7 @@ const Networking = (() => {
       <div id="pact-box"></div>
       <div class="psec">Details</div><div class="pform">${field("firm", "Firm")}${field("title", "Title")}${field("linkedin", "LinkedIn URL", "https://www.linkedin.com/in/…")}${field("email", "E-mail")}${field("phone", "Phone")}${field("alumni", "Shared school")}
         <label class="pf-edit"><span>Seniority</span><select data-field="seniority">${["", "senior", "junior", "student"].map(s => `<option ${p.seniority === s ? "selected" : ""} value="${s}">${s || "–"}</option>`).join("")}</select></label>
+        <label class="pf-edit"><span>Relationship</span><select data-field="relationship">${["", "friend", "classmate", "family", "not relevant"].map(s => `<option ${(p.relationship || "") === s ? "selected" : ""} value="${s}">${s || "networking contact"}</option>`).join("")}</select></label>
         <label class="pf-edit"><span>Language</span><select data-field="lang">${["FR", "EN"].map(s => `<option ${String(p.lang).toUpperCase() === s ? "selected" : ""}>${s}</option>`).join("")}</select></label></div>
       <div class="psec">LinkedIn profile <span class="muted small">(Cmd+A, Cmd+C on their profile, then paste)</span></div>
       <textarea class="ptext" id="profile-text" rows="4" placeholder="Paste the profile here: drafts will use it in phase C.">${esc((st.profiles || {})[p.id]?.text || "")}</textarea>
@@ -378,7 +395,7 @@ const Networking = (() => {
     const text = box.querySelector(".comp-text").value, d = st.drafts[key] || {};
     if (btn.dataset.form) { st.drafts[key] = null; st.drafts[key] = { ...draftFor({ ...(person(pid) || netFake(box)), id: pid }, kind, btn.dataset.form) }; return render(); }
     if (btn.dataset.act === "close-comp") { st.open = null; return render(); }
-    if (btn.dataset.act === "handled") { st.open = null; return addEvents([ev(pid, "handled")], "no reply needed"); }
+    if (btn.dataset.act === "handled") { st.open = pid + ":reply:skip"; return render(); }
     if (btn.dataset.act === "copy") {
       navigator.clipboard?.writeText(text).catch(() => {});
       st.drafts[key] = { ...d, text };
@@ -435,7 +452,6 @@ const Networking = (() => {
     switch (a.dataset.act) {
       case "confirm": { const c = p.st.s.copied; return addEvents([ev(pid, "message_sent", { kind: c.kind, channel: "linkedin", text: c.text })], "sent"); }
       case "notsent": return addEvents([ev(pid, "not_sent")], "not sent");
-      case "skip": return addEvents([ev(pid, "closed", { reason: "no message needed" })], "skip " + p.name);
       case "req-sent": return addEvents([ev(pid, "request_sent", { channel: "linkedin" })], "request " + p.name);
       case "accepted": return addEvents([ev(pid, "accepted")], "accepted " + p.name);
       case "withdrawn": return addEvents([ev(pid, "withdrawn")], "withdrawn " + p.name);
@@ -457,6 +473,21 @@ const Networking = (() => {
   }
   function onSubmit(e) {
     const f = e.target; e.preventDefault();
+    if (f.classList.contains("noneed")) {
+      const x = Object.fromEntries(new FormData(f).entries()), pid = f.dataset.pid;
+      if (!x.reason && !x.text) return toast("Pick a reason or write one");
+      if (!person(pid) && f.dataset.net) {
+        const n = st.m.network.find(z => z.key === f.dataset.net);
+        newPerson({ ...netPerson(n), ...(NetEngine.PERSONAL.includes(x.reason) ? { relationship: x.reason, relationship_note: x.text || "" } : {}) },
+          [ev(pid, "skipped", { task: "dormant", reason: (REASONS.find(r => r[0] === x.reason) || [, x.reason || ""])[1], text: x.text || "" })], "no need: " + n.name);
+        st.open = null; return render();
+      }
+      const p = person(pid);
+      const label = (REASONS.find(r => r[0] === x.reason) || [, x.reason || ""])[1];
+      st.open = null;
+      if (NetEngine.PERSONAL.includes(x.reason)) patchPerson(pid, { relationship: x.reason, relationship_note: x.text || "" }, "relationship " + p.name);
+      return addEvents([ev(pid, "skipped", { task: f.dataset.skiptask, reason: label, text: x.text || "" })], "no need: " + p.name);
+    }
     if (f.classList.contains("addp") && f.id !== "advice-form") return onAddRequests(f);
     if (f.id === "advice-form") {
       const x = Object.fromEntries(new FormData(f).entries()), a = { id: uid(), text: x.text, from: x.from, theme: x.theme, at: nowIso(), to_todo: false };

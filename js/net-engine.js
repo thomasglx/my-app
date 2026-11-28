@@ -34,6 +34,7 @@ const NetEngine = (() => {
     if (/(m&a|investment banking|\bib\b|private equity|transaction services|\becm\b|venture|corporate finance)/.test(h)) return 5;
     return 6;
   }
+  const PERSONAL = ["friend", "classmate", "family", "not relevant"];
   const isStudent = t => /\b(intern|stagiaire|stage|student|étudiant|etudiant|alternant|apprenti|trainee)\b/i.test(t || "");
 
   /* -------------------------------------------------------------- merge */
@@ -76,6 +77,13 @@ const NetEngine = (() => {
         case "reopened": s.closed = null; break;
         case "copied": s.copied = e; break;
         case "handled": s.handled = e; break;
+        case "skipped":   // "No need" on a task: resolves that task, with a reason
+          if (["reply", "talking"].includes(e.task)) s.handled = e;
+          else if (e.task === "thanks") s.thanked = e;
+          else if (e.task === "keep_warm") s.lastContact = e;
+          else if (e.task === "withdraw") s.withdrawn = e;
+          else s.closed = { ...e, reason: e.reason || "no need" };
+          break;
         case "not_sent": s.copied = null; break;
       }
     }
@@ -85,6 +93,7 @@ const NetEngine = (() => {
                 lastContactAt: s.lastContact ? day(s.lastContact.at) : null };
     const set = (stage, label, due, prio, info = "") => Object.assign(r, { stage, label, due, prio, info });
 
+    if (PERSONAL.includes(p.relationship)) return set("personal", `${p.relationship[0].toUpperCase() + p.relationship.slice(1)}: not tracked`, null, 98, p.relationship_note || "");
     if (s.closed) return set("closed", "Closed", null, 99, s.closed.reason || "");
     const recvOpen = s.lastRecv && (!s.lastSent || s.lastRecv.at >= s.lastSent.at) && !(s.handled && s.handled.at >= s.lastRecv.at)
       && !(s.callDone && day(s.callDone.at) >= day(s.lastRecv.at)) && !(s.callBooked && day(s.callBooked.at) >= day(s.lastRecv.at))
@@ -275,5 +284,5 @@ const NetEngine = (() => {
   }
 
   return { build, funnel, templates, fill, form, unresolved, ics, vcard, levelOf, firmMatch, norm, nameKey,
-           addDays, diff, day, isoDay, DEFAULTS };
+           addDays, diff, day, isoDay, DEFAULTS, PERSONAL };
 })();
